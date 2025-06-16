@@ -1501,7 +1501,8 @@ document.body.addEventListener('click', function(e) {
 // Location Master 관리 섹션
 // =========================
 
-// HTML 삽입
+// 아래 코드를 주석 처리하여 본문에 항상 보이지 않게 함
+/*
 (function() {
   const section = document.createElement('section');
   section.id = 'locationMasterSection';
@@ -1532,10 +1533,12 @@ document.body.addEventListener('click', function(e) {
   `;
   document.body.appendChild(section);
 })();
+*/
 
 // 위치 목록 불러오기
 async function loadLocations() {
   const tbody = document.querySelector('#locationTable tbody');
+  if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="4">Loading...</td></tr>';
   const { data, error } = await window.supabase.from('locations').select('*').order('location_code');
   if (error) {
@@ -1567,37 +1570,41 @@ async function loadLocations() {
 
 // 위치 등록
 const addLocationForm = document.getElementById('addLocationForm');
-addLocationForm.addEventListener('submit', async function(e) {
-  e.preventDefault();
-  const location_code = document.getElementById('locationCodeInput').value.trim();
-  const status = document.getElementById('statusInput').value;
-  const remark = document.getElementById('remarkInput').value.trim();
-  if (!location_code) return alert('위치코드를 입력하세요.');
-  const { error } = await window.supabase.from('locations').insert({ location_code, status, remark });
-  if (error) return alert('등록 실패: ' + error.message);
-  addLocationForm.reset();
-  loadLocations();
-});
+if (addLocationForm) {
+  addLocationForm.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const location_code = document.getElementById('locationCodeInput').value.trim();
+    const status = document.getElementById('statusInput').value;
+    const remark = document.getElementById('remarkInput').value.trim();
+    if (!location_code) return alert('위치코드를 입력하세요.');
+    const { error } = await window.supabase.from('locations').insert({ location_code, status, remark });
+    if (error) return alert('등록 실패: ' + error.message);
+    addLocationForm.reset();
+    loadLocations();
+  });
+}
 
 // 수정/삭제 이벤트 위임
 const locationTable = document.getElementById('locationTable');
-locationTable.addEventListener('click', async function(e) {
-  const id = e.target.dataset.id;
-  if (e.target.classList.contains('updateLocBtn')) {
-    // 수정
-    const status = locationTable.querySelector(`select.statusEdit[data-id='${id}']`).value;
-    const remark = locationTable.querySelector(`input.remarkEdit[data-id='${id}']`).value;
-    const { error } = await window.supabase.from('locations').update({ status, remark }).eq('id', id);
-    if (error) return alert('수정 실패: ' + error.message);
-    loadLocations();
-  } else if (e.target.classList.contains('deleteLocBtn')) {
-    // 삭제
-    if (!confirm('정말 삭제하시겠습니까?')) return;
-    const { error } = await window.supabase.from('locations').delete().eq('id', id);
-    if (error) return alert('삭제 실패: ' + error.message);
-    loadLocations();
-  }
-});
+if (locationTable) {
+  locationTable.addEventListener('click', async function(e) {
+    const id = e.target.dataset.id;
+    if (e.target.classList.contains('updateLocBtn')) {
+      // 수정
+      const status = locationTable.querySelector(`select.statusEdit[data-id='${id}']`).value;
+      const remark = locationTable.querySelector(`input.remarkEdit[data-id='${id}']`).value;
+      const { error } = await window.supabase.from('locations').update({ status, remark }).eq('id', id);
+      if (error) return alert('수정 실패: ' + error.message);
+      loadLocations();
+    } else if (e.target.classList.contains('deleteLocBtn')) {
+      // 삭제
+      if (!confirm('정말 삭제하시겠습니까?')) return;
+      const { error } = await window.supabase.from('locations').delete().eq('id', id);
+      if (error) return alert('삭제 실패: ' + error.message);
+      loadLocations();
+    }
+  });
+}
 
 // 최초 로드
 loadLocations();

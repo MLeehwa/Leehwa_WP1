@@ -46,6 +46,10 @@ const i18n = {
     msg_match_fail: '매칭 실패: 출하증의 컨테이너 번호와 실물 바코드가 다릅니다.',
     msg_confirm_success: '출하가 확정되었습니다.',
     msg_confirm_error: '출하 확정 중 오류 발생: {error}',
+    msg_delete_shipping: '삭제',
+    msg_confirm_delete: '정말로 이 출하 지시서를 삭제하시겠습니까?\n삭제 후에는 복구할 수 없습니다.',
+    msg_delete_success: '출하 지시서가 삭제되었습니다.',
+    msg_delete_error: '삭제 중 오류 발생: {error}',
   },
   en: {
     title_shipping_confirmation: 'Shipping Confirmation Admin',
@@ -88,6 +92,10 @@ const i18n = {
     msg_match_fail: 'Match failed: Container No. and barcode do not match.',
     msg_confirm_success: 'Shipping confirmed.',
     msg_confirm_error: 'Error confirming shipping: {error}',
+    msg_delete_shipping: 'Delete',
+    msg_confirm_delete: 'Are you sure you want to delete this shipping instruction?\nThis action cannot be undone.',
+    msg_delete_success: 'Shipping instruction has been deleted.',
+    msg_delete_error: 'Error deleting: {error}',
   }
 };
 
@@ -314,12 +322,15 @@ function updateMatchingList(items) {
       </td>
       <td class="px-4 py-2 border">${hasSI ? (item.shipped_at || '-') : '-'}</td>
       <td class="px-4 py-2 border">
-        ${hasSI && si.status !== 'shipped'
-          ? `<button class="text-blue-600 hover:text-blue-800 mr-2" onclick="printShippingLabel('${si.barcode}')">${formatMessage('msg_label_print')}</button>
-             <button class="text-red-600 hover:text-red-800" onclick="window.confirmShipping('${si.id}')">${formatMessage('msg_confirm_shipping')}</button>`
-          : hasSI && si.status === 'shipped'
-            ? `<span class="text-green-600">${formatMessage('msg_done')}</span>`
-            : ''}
+        ${hasSI
+          ? `<div class="flex gap-2">
+              ${si.status !== 'shipped'
+                ? `<button class="text-blue-600 hover:text-blue-800" onclick="printShippingLabel('${si.barcode}')">${formatMessage('msg_label_print')}</button>
+                   <button class="text-red-600 hover:text-red-800" onclick="window.confirmShipping('${si.id}')">${formatMessage('msg_confirm_shipping')}</button>`
+                : `<span class="text-green-600">${formatMessage('msg_done')}</span>`}
+              <button class="text-gray-600 hover:text-gray-800" onclick="window.deleteShipping('${si.id}')">${formatMessage('msg_delete_shipping')}</button>
+            </div>`
+          : ''}
       </td>
     `;
     matchingListBody.appendChild(tr);
@@ -618,6 +629,46 @@ window.confirmShipping = async function(shippingInstructionId) {
     alert('출하 확정 처리 실패: ' + e.message);
   }
 }
+
+// 출하 지시서 삭제 함수
+window.deleteShipping = async function(shippingInstructionId) {
+  if (!confirm(formatMessage('msg_confirm_delete'))) return;
+  
+  try {
+    // 1. shipping_instruction_items 삭제
+    const { error: itemsError } = await supabase
+      .from('shipping_instruction_items')
+      .delete()
+      .eq('shipping_instruction_id', shippingInstructionId);
+    
+    if (itemsError) throw itemsError;
+
+    // 2. shipping_instruction 삭제
+    const { error: siError } = await supabase
+      .from('shipping_instruction')
+      .delete()
+      .eq('id', shippingInstructionId);
+    
+    if (siError) throw siError;
+
+    alert(formatMessage('msg_delete_success'));
+    loadMatchingList(); // 목록 새로고침
+    
+    // LOCATION VIEW 자동 새로고침
+    try {
+      if (window.location.hash === '#location' || window.location.pathname.includes('location_view')) {
+        window.location.reload();
+      } else if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({ type: 'refreshLocationView' }, '*');
+      }
+    } catch (e) {
+      console.error('Error refreshing location view:', e);
+    }
+  } catch (error) {
+    console.error('Error deleting shipping:', error);
+    alert(formatMessage('msg_delete_error', { error: error.message }));
+  }
+};
 
 // 언어 변경 이벤트 리스너
 if (typeof window !== 'undefined') {

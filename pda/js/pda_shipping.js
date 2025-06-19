@@ -142,22 +142,39 @@ async function scanBarcodeFromCamera() {
   const ctx = canvas.getContext('2d');
   let scanning = true;
   
+  // jsQR 라이브러리 확인
+  if (!window.jsQR) {
+    console.error('jsQR 라이브러리가 로드되지 않았습니다.');
+    alert('QR 스캔 라이브러리를 불러올 수 없습니다. 페이지를 새로고침해주세요.');
+    return;
+  }
+  
+  console.log('카메라 스캔 시작...');
+  
   async function tick() {
     if (!scanning || cameraPreview.style.display === 'none') return;
     
     if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      
-      if (window.jsQR) {
-        const code = window.jsQR(imageData.data, canvas.width, canvas.height);
+      try {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        
+        // QR 코드 스캔 시도
+        const code = window.jsQR(imageData.data, canvas.width, canvas.height, {
+          inversionAttempts: "dontInvert",
+        });
+        
         if (code && code.data) {
+          console.log('QR 코드 인식 성공:', code.data);
           scanning = false;
+          
           // 바코드 인풋에 값 입력 및 자동 처리
           barcodeInput.value = code.data;
           barcodeInput.dispatchEvent(new Event('input'));
+          
+          // 카메라 정리
           cameraPreview.style.display = 'none';
           if (cameraStream) {
             cameraStream.getTracks().forEach(track => track.stop());
@@ -165,10 +182,13 @@ async function scanBarcodeFromCamera() {
           }
           return;
         }
+      } catch (error) {
+        console.error('QR 스캔 중 오류:', error);
       }
     }
     requestAnimationFrame(tick);
   }
+  
   tick();
 }
 

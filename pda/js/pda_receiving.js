@@ -433,14 +433,14 @@ async function processReceivingBarcode(barcodeValue) {
     console.log('🔍 스캔된 바코드 값:', barcodeValue);
     console.log('🔍 검색 조건: container_no =', barcodeValue);
     
-    // container_no로 receiving_plan 검색
-    let { data: receivingPlan, error } = await supabase
-      .from('receiving_plan')
-      .select('id, type, container_no, receive_date, trailer_seq')
+    // receiving_items에서 container_no로 검색
+    let { data: receivingItems, error } = await supabase
+      .from('receiving_items')
+      .select('id, label_id, container_no')
       .eq('container_no', barcodeValue)
       .maybeSingle();
     
-    console.log('📊 검색 결과 (container_no):', { receivingPlan, error });
+    console.log('📊 검색 결과 (receiving_items):', { receivingItems, error });
     
     if (error) {
       console.error('❌ 데이터베이스 오류:', error);
@@ -449,15 +449,15 @@ async function processReceivingBarcode(barcodeValue) {
       return;
     }
     
-    if (!receivingPlan) {
-      console.log('❌ 입고지시서를 찾을 수 없음');
-      showMessage(`입고지시서를 찾을 수 없습니다. (검색값: ${barcodeValue})`, 'error');
+    if (!receivingItems) {
+      console.log('❌ 입고 아이템을 찾을 수 없음');
+      showMessage(`입고 아이템을 찾을 수 없습니다. (검색값: ${barcodeValue})`, 'error');
       barcodeInput.value = '';
       return;
     }
     
-    console.log('✅ 입고지시서 찾음:', receivingPlan);
-    currentReceivingPlan = receivingPlan;
+    console.log('✅ 입고 아이템 찾음:', receivingItems);
+    currentReceivingPlan = receivingItems; // 변수명은 유지하되 receiving_items 데이터를 저장
     
     // 입고 정보 표시
     const receivingInfo = document.getElementById('receivingInfo');
@@ -467,10 +467,8 @@ async function processReceivingBarcode(barcodeValue) {
       receivingInfo.innerHTML = `
         <div class="bg-white p-4 rounded-lg shadow">
           <h3 class="text-lg font-semibold mb-2">입고 정보</h3>
-          <p><strong>컨테이너 번호:</strong> ${receivingPlan.container_no || 'N/A'}</p>
-          <p><strong>타입:</strong> ${receivingPlan.type || 'N/A'}</p>
-          <p><strong>입고 예정일:</strong> ${receivingPlan.receive_date ? new Date(receivingPlan.receive_date).toLocaleDateString() : 'N/A'}</p>
-          <p><strong>트레일러 순번:</strong> ${receivingPlan.trailer_seq || 'N/A'}</p>
+          <p><strong>라벨 ID:</strong> ${receivingItems.label_id || 'N/A'}</p>
+          <p><strong>컨테이너 번호:</strong> ${receivingItems.container_no || 'N/A'}</p>
         </div>
       `;
       receivingInfo.classList.remove('hidden');
@@ -480,11 +478,11 @@ async function processReceivingBarcode(barcodeValue) {
       receivingForm.classList.remove('hidden');
     }
     
-    showMessage('입고지시서 스캔 완료. 자동으로 입고를 처리합니다...', 'success');
+    showMessage('입고 아이템 스캔 완료. 자동으로 입고를 처리합니다...', 'success');
     
     // 자동 입고 처리 (3초 후)
     setTimeout(async () => {
-      await completeReceiving(receivingPlan);
+      await completeReceiving(receivingItems);
     }, 3000);
     
     barcodeInput.value = '';
@@ -492,13 +490,13 @@ async function processReceivingBarcode(barcodeValue) {
     
   } catch (error) {
     console.error('❌ 예상치 못한 오류:', error);
-    showMessage('입고지시서 검색 중 오류가 발생했습니다.', 'error');
+    showMessage('입고 아이템 검색 중 오류가 발생했습니다.', 'error');
     barcodeInput.value = '';
   }
 }
 
 // 입고 완료 처리 함수
-async function completeReceiving(receivingPlan) {
+async function completeReceiving(receivingItems) {
   try {
     const etTime = new Date();
     
@@ -506,7 +504,7 @@ async function completeReceiving(receivingPlan) {
     const { error: logError } = await supabase
       .from('receiving_log')
       .insert({
-        label_id: receivingPlan.container_no, // container_no를 label_id로 사용
+        label_id: receivingItems.label_id,
         received_at: etTime.toISOString(),
         confirmed_by: 'pda_user'
       });

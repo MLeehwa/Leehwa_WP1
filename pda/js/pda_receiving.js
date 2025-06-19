@@ -423,106 +423,102 @@ barcodeInput.addEventListener('keydown', async (e) => {
     const value = barcodeInput.value.trim();
     if (!value) return;
     
-    try {
-      // 입고지시서 바코드로 검색
-      const { data: receivingPlan, error } = await supabase
-        .from('receiving_plan')
-        .select('id, label_id, part_no, quantity, location_code')
-        .eq('barcode', value)
-        .maybeSingle();
-      
-      if (error || !receivingPlan) {
-        showMessage('입고지시서를 찾을 수 없습니다.', 'error');
-        barcodeInput.value = '';
-        return;
-      }
-      
-      currentReceivingPlan = receivingPlan;
-      
-      // 입고 정보 표시
-      const receivingInfo = document.getElementById('receivingInfo');
-      const receivingForm = document.getElementById('receivingForm');
-      
-      if (receivingInfo) {
-        receivingInfo.innerHTML = `
-          <div class="bg-white p-4 rounded-lg shadow">
-            <h3 class="text-lg font-semibold mb-2">입고 정보</h3>
-            <p><strong>라벨 ID:</strong> ${receivingPlan.label_id || 'N/A'}</p>
-            <p><strong>품번:</strong> ${receivingPlan.part_no || 'N/A'}</p>
-            <p><strong>수량:</strong> ${receivingPlan.quantity || 'N/A'}</p>
-            <p><strong>위치:</strong> ${receivingPlan.location_code || 'N/A'}</p>
-          </div>
-        `;
-        receivingInfo.classList.remove('hidden');
-      }
-      
-      if (receivingForm) {
-        receivingForm.classList.remove('hidden');
-        document.getElementById('quantity').value = receivingPlan.quantity || '';
-        document.getElementById('location').value = receivingPlan.location_code || '';
-      }
-      
-      showMessage('입고지시서 스캔 완료. 수량과 위치를 확인하고 입고를 완료하세요.', 'success');
-      barcodeInput.value = '';
-      barcodeInput.focus();
-      
-    } catch (error) {
-      console.error('Error:', error);
-      showMessage('입고지시서 검색 중 오류가 발생했습니다.', 'error');
-      barcodeInput.value = '';
-    }
+    await processReceivingBarcode(value);
   }
 });
 
-// 입력값이 6글자 이상이면 자동으로 Enter keydown 이벤트 발생
-barcodeInput.addEventListener('input', (e) => {
-  if (barcodeInput.value && barcodeInput.value.length >= 6) {
-    const event = new KeyboardEvent('keydown', { key: 'Enter' });
-    barcodeInput.dispatchEvent(event);
-  }
-});
-
-// 입고 완료 버튼 이벤트
-document.addEventListener('click', async (e) => {
-  if (e.target.id === 'completeReceiving') {
-    if (!currentReceivingPlan) {
-      showMessage('입고지시서가 선택되지 않았습니다.', 'error');
+// 바코드 스캔 후 자동 입고 처리 함수
+async function processReceivingBarcode(barcodeValue) {
+  try {
+    // 입고지시서 바코드로 검색
+    const { data: receivingPlan, error } = await supabase
+      .from('receiving_plan')
+      .select('id, label_id, part_no, quantity, location_code')
+      .eq('barcode', barcodeValue)
+      .maybeSingle();
+    
+    if (error || !receivingPlan) {
+      showMessage('입고지시서를 찾을 수 없습니다.', 'error');
+      barcodeInput.value = '';
       return;
     }
     
-    const quantity = document.getElementById('quantity').value;
-    const location = normalizeLocationCode(document.getElementById('location').value);
+    currentReceivingPlan = receivingPlan;
+    
+    // 입고 정보 표시
+    const receivingInfo = document.getElementById('receivingInfo');
+    const receivingForm = document.getElementById('receivingForm');
+    
+    if (receivingInfo) {
+      receivingInfo.innerHTML = `
+        <div class="bg-white p-4 rounded-lg shadow">
+          <h3 class="text-lg font-semibold mb-2">입고 정보</h3>
+          <p><strong>라벨 ID:</strong> ${receivingPlan.label_id || 'N/A'}</p>
+          <p><strong>품번:</strong> ${receivingPlan.part_no || 'N/A'}</p>
+          <p><strong>수량:</strong> ${receivingPlan.quantity || 'N/A'}</p>
+          <p><strong>위치:</strong> ${receivingPlan.location_code || 'N/A'}</p>
+        </div>
+      `;
+      receivingInfo.classList.remove('hidden');
+    }
+    
+    if (receivingForm) {
+      receivingForm.classList.remove('hidden');
+      document.getElementById('quantity').value = receivingPlan.quantity || '';
+      document.getElementById('location').value = receivingPlan.location_code || '';
+    }
+    
+    showMessage('입고지시서 스캔 완료. 자동으로 입고를 처리합니다...', 'success');
+    
+    // 자동 입고 처리 (3초 후)
+    setTimeout(async () => {
+      await completeReceiving(receivingPlan);
+    }, 3000);
+    
+    barcodeInput.value = '';
+    barcodeInput.focus();
+    
+  } catch (error) {
+    console.error('Error:', error);
+    showMessage('입고지시서 검색 중 오류가 발생했습니다.', 'error');
+    barcodeInput.value = '';
+  }
+}
+
+// 입고 완료 처리 함수
+async function completeReceiving(receivingPlan) {
+  try {
+    const quantity = receivingPlan.quantity || document.getElementById('quantity').value;
+    const location = normalizeLocationCode(receivingPlan.location_code || document.getElementById('location').value);
     
     if (!quantity || !location) {
-      showMessage('수량과 위치를 모두 입력해주세요.', 'error');
+      showMessage('수량과 위치 정보가 부족합니다.', 'error');
       return;
     }
     
-    try {
-      const etTime = new Date();
-      
-      // 입고 로그 기록
-      const { error: logError } = await supabase
-        .from('receiving_log')
-        .insert({
-          label_id: currentReceivingPlan.label_id,
-          received_at: etTime.toISOString(),
-          confirmed_by: 'pda_user',
-          quantity: quantity,
-          location_code: location
-        });
-      
-      if (logError) throw logError;
-      
-      showMessage('입고가 완료되었습니다.', 'success');
-      resetForm();
-      barcodeInput.focus();
-    } catch (error) {
-      console.error('Error:', error);
-      showMessage('입고 완료 중 오류가 발생했습니다.', 'error');
-    }
+    const etTime = new Date();
+    
+    // 입고 로그 기록
+    const { error: logError } = await supabase
+      .from('receiving_log')
+      .insert({
+        label_id: receivingPlan.label_id,
+        received_at: etTime.toISOString(),
+        confirmed_by: 'pda_user',
+        quantity: quantity,
+        location_code: location
+      });
+    
+    if (logError) throw logError;
+    
+    showMessage('입고가 자동으로 완료되었습니다!', 'success');
+    resetForm();
+    barcodeInput.focus();
+  } catch (error) {
+    console.error('Error:', error);
+    showMessage('입고 완료 중 오류가 발생했습니다.', 'error');
   }
-});
+}
 
 function resetForm() {
   const receivingInfo = document.getElementById('receivingInfo');
@@ -581,4 +577,32 @@ document.querySelectorAll('.lang-btn').forEach(btn => {
   btn.onclick = () => setLang(btn.getAttribute('data-lang'));
 });
 
-setLang(localStorage.getItem('pda_lang') || 'ko'); 
+setLang(localStorage.getItem('pda_lang') || 'ko');
+
+// 입력값이 6글자 이상이면 자동으로 Enter keydown 이벤트 발생
+barcodeInput.addEventListener('input', (e) => {
+  if (barcodeInput.value && barcodeInput.value.length >= 6) {
+    const event = new KeyboardEvent('keydown', { key: 'Enter' });
+    barcodeInput.dispatchEvent(event);
+  }
+});
+
+// 입고 완료 버튼 이벤트 (수동 처리)
+document.addEventListener('click', async (e) => {
+  if (e.target.id === 'completeReceiving') {
+    if (!currentReceivingPlan) {
+      showMessage('입고지시서가 선택되지 않았습니다.', 'error');
+      return;
+    }
+    
+    const quantity = document.getElementById('quantity').value;
+    const location = normalizeLocationCode(document.getElementById('location').value);
+    
+    if (!quantity || !location) {
+      showMessage('수량과 위치를 모두 입력해주세요.', 'error');
+      return;
+    }
+    
+    await completeReceiving(currentReceivingPlan);
+  }
+}); 

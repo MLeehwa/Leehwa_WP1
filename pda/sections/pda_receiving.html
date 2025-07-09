@@ -13,7 +13,7 @@
         .lang-btn.active { box-shadow: 0 0 0 3px #2563eb55; font-weight: bold; }
         .home-btn {
             display: block;
-            width: 90%;
+            width: 30%;
             margin: 40px auto 20px auto;
             padding: 16px;
             font-size: 1.2rem;
@@ -79,11 +79,19 @@
     </div>
     <span id="messageText" class="block mt-4 text-lg text-red-600"></span>
 
+    <!-- 입고 정보 표시 영역 -->
+    <div id="receivingInfo" class="w-full max-w-2xl hidden">
+        <!-- 입고 정보가 여기에 동적으로 표시됩니다 -->
+    </div>
+
+    <!-- 입고 폼 (숨김 처리) -->
+    <div id="receivingForm" class="hidden"></div>
+
     <script src="../config/config.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="../js/pda_receiving.js"></script>
 
     <!-- Add at the very bottom before </body> -->
-    <button class="home-btn" onclick="location.href='pda_index.html'" data-i18n="home_btn">홈으로</button>
+    <button class="home-btn" onclick="location.href='pda_index.html'" data-i18n="home_btn">Main Menu</button>
 </body>
 </html> 

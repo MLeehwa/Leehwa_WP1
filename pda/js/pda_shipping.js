@@ -465,12 +465,16 @@ barcodeInput.addEventListener('keydown', async (e) => {
         .from('shipping_instruction')
         .update({ status: 'shipped' })
         .eq('id', currentShippingInfo.id);
+      
+      // receiving_items의 location_code를 null로 업데이트
       if (currentShippingInfo.label_id) {
+        // 단일 라벨인 경우
         await supabase
           .from('receiving_items')
           .update({ location_code: null })
           .eq('label_id', currentShippingInfo.label_id);
       } else {
+        // 여러 파트인 경우 - shipping_instruction_items의 모든 label_id 처리
         const { data: shippedItems } = await supabase
           .from('shipping_instruction_items')
           .select('label_id')
@@ -481,6 +485,14 @@ barcodeInput.addEventListener('keydown', async (e) => {
             .from('receiving_items')
             .update({ location_code: null })
             .in('label_id', shippedLabelIds);
+        } else {
+          // shipping_instruction_items에 label_id가 없는 경우, container_no로 업데이트
+          if (currentShippingInfo.container_no) {
+            await supabase
+              .from('receiving_items')
+              .update({ location_code: null })
+              .eq('container_no', currentShippingInfo.container_no);
+          }
         }
       }
       showResult('출고가 확정되었습니다.', 'success');

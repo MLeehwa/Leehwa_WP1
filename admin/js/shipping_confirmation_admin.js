@@ -201,7 +201,8 @@ async function loadMatchingList(applyFilter = false) {
           part_no,
           qty,
           status,
-          container_no
+          container_no,
+          part_quantities
         )
       `)
       .order('created_at', { ascending: false });
@@ -225,7 +226,26 @@ async function loadMatchingList(applyFilter = false) {
       if (!si) return false;
       if (statusVal && si.status !== statusVal) return false;
       if (dateVal && si.shipping_date !== dateVal) return false;
-      if (partNoSearch && !si.part_no?.toLowerCase().includes(partNoSearch.toLowerCase())) return false;
+      
+      // part_quantities가 있는 경우 해당 파트들 중 하나라도 검색어와 일치하는지 확인
+      if (partNoSearch) {
+        let hasMatchingPart = false;
+        if (si.part_quantities) {
+          try {
+            const partQuantities = JSON.parse(si.part_quantities);
+            hasMatchingPart = Object.keys(partQuantities).some(part => 
+              part.toLowerCase().includes(partNoSearch.toLowerCase())
+            );
+          } catch (e) {
+            console.error('Error parsing part_quantities:', e);
+          }
+        }
+        // 기존 part_no도 확인
+        if (!hasMatchingPart && !si.part_no?.toLowerCase().includes(partNoSearch.toLowerCase())) {
+          return false;
+        }
+      }
+      
       if (minQty && item.qty < Number(minQty)) return false;
       if (maxQty && item.qty > Number(maxQty)) return false;
       return true;
@@ -249,11 +269,45 @@ function calculateSearchStats(items) {
   if (!Array.isArray(items) || items.length === 0) {
     return { total: 0, shipped: 0, pending: 0, totalQty: 0 };
   }
+  
+  // shipping_instruction_id별로 그룹화하여 중복 제거
+  const groupedItems = {};
+  items.forEach(item => {
+    const si = item.shipping_instruction;
+    if (!si) return;
+    
+    const siId = si.id;
+    if (!groupedItems[siId]) {
+      groupedItems[siId] = {
+        shipping_instruction: si,
+        items: []
+      };
+    }
+    groupedItems[siId].items.push(item);
+  });
+  
+  const groupedArray = Object.values(groupedItems);
+  
   return {
-    total: items.length,
-    shipped: items.filter(item => item.shipping_instruction && item.shipping_instruction.status === 'shipped').length,
-    pending: items.filter(item => item.shipping_instruction && item.shipping_instruction.status === 'pending').length,
-    totalQty: items.reduce((sum, item) => sum + (item.qty || 0), 0)
+    total: groupedArray.length,
+    shipped: groupedArray.filter(group => group.shipping_instruction.status === 'shipped').length,
+    pending: groupedArray.filter(group => group.shipping_instruction.status === 'pending').length,
+    totalQty: groupedArray.reduce((sum, group) => {
+      const si = group.shipping_instruction;
+      let qty = si.qty || 0;
+      
+      // part_quantities가 있는 경우 총 수량 계산
+      if (si.part_quantities) {
+        try {
+          const partQuantities = JSON.parse(si.part_quantities);
+          qty = Object.values(partQuantities).reduce((partSum, partQty) => partSum + partQty, 0);
+        } catch (e) {
+          console.error('Error parsing part_quantities:', e);
+        }
+      }
+      
+      return sum + qty;
+    }, 0)
   };
 }
 
@@ -299,38 +353,93 @@ function updateMatchingList(items) {
     `;
     return;
   }
+  
+  // shipping_instruction_id별로 그룹화하여 중복 제거
+  const groupedItems = {};
   items.forEach(item => {
+    const si = item.shipping_instruction;
+    if (!si) return;
+    
+    const siId = si.id;
+    if (!groupedItems[siId]) {
+      groupedItems[siId] = {
+        shipping_instruction: si,
+        items: []
+      };
+    }
+    groupedItems[siId].items.push(item);
+  });
+  
+  // 그룹화된 데이터를 정렬: 대기중(pending) 먼저, 그 다음 출고완료(shipped)
+  const sortedGroups = Object.values(groupedItems).sort((a, b) => {
+    const statusA = a.shipping_instruction.status;
+    const statusB = b.shipping_instruction.status;
+    
+    // pending가 먼저 오도록 정렬
+    if (statusA === 'pending' && statusB === 'shipped') return -1;
+    if (statusA === 'shipped' && statusB === 'pending') return 1;
+    
+    // 같은 상태인 경우 생성일 기준 내림차순 정렬
+    return new Date(b.shipping_instruction.created_at) - new Date(a.shipping_instruction.created_at);
+  });
+  
+  // 정렬된 데이터를 화면에 표시
+  sortedGroups.forEach(group => {
+    const si = group.shipping_instruction;
+    const items = group.items;
+    
+    // part_quantities 파싱
+    let partQuantities = {};
+    if (si.part_quantities) {
+      try {
+        partQuantities = JSON.parse(si.part_quantities);
+      } catch (e) {
+        console.error('Error parsing part_quantities:', e);
+      }
+    }
+    
+    // 파트 정보 생성
+    let partDisplay = si.part_no || '-';
+    if (Object.keys(partQuantities).length > 0) {
+      // 여러 파트가 있는 경우
+      partDisplay = Object.entries(partQuantities)
+        .map(([partNo, qty]) => `${partNo}(${qty})`)
+        .join(', ');
+    }
+    
+    // 수량 정보 생성
+    let qtyDisplay = si.qty || '-';
+    if (Object.keys(partQuantities).length > 0) {
+      // 여러 파트가 있는 경우 총 수량 표시
+      const totalQty = Object.values(partQuantities).reduce((sum, qty) => sum + qty, 0);
+      qtyDisplay = totalQty;
+    }
+    
     const tr = document.createElement('tr');
     tr.className = 'border-t hover:bg-gray-50';
-    const si = item.shipping_instruction || {};
-    const hasSI = !!item.shipping_instruction;
     tr.innerHTML = `
-      <td class="px-4 py-2 border">${hasSI ? (si.container_no || '-') : '-'}</td>
-      <td class="px-4 py-2 border">${hasSI ? (si.shipping_date || '-') : '-'}</td>
-      <td class="px-4 py-2 border">${hasSI ? (si.part_no || '-') : '-'}</td>
-      <td class="px-4 py-2 border">${hasSI ? (item.qty || '-') : '-'}</td>
+      <td class="px-4 py-2 border">${si.container_no || '-'}</td>
+      <td class="px-4 py-2 border">${si.shipping_date || '-'}</td>
+      <td class="px-4 py-2 border">${partDisplay}</td>
+      <td class="px-4 py-2 border">${qtyDisplay}</td>
       <td class="px-4 py-2 border">
-        ${hasSI
-          ? `<span class="px-2 py-1 rounded-full text-sm ${
-              si.status === 'shipped'
-                ? 'bg-green-100 text-green-800'
-                : 'bg-yellow-100 text-yellow-800'
-            }">
-              ${si.status === 'shipped' ? formatMessage('msg_status_shipped') : formatMessage('msg_status_pending')}
-            </span>`
-          : '-'}
+        <span class="px-2 py-1 rounded-full text-sm ${
+          si.status === 'shipped'
+            ? 'bg-green-100 text-green-800'
+            : 'bg-yellow-100 text-yellow-800'
+        }">
+          ${si.status === 'shipped' ? formatMessage('msg_status_shipped') : formatMessage('msg_status_pending')}
+        </span>
       </td>
-      <td class="px-4 py-2 border">${hasSI ? (item.shipped_at || '-') : '-'}</td>
+      <td class="px-4 py-2 border">${items[0]?.shipped_at || '-'}</td>
       <td class="px-4 py-2 border">
-        ${hasSI
-          ? `<div class="flex gap-2">
-              ${si.status !== 'shipped'
-                ? `<button class="text-blue-600 hover:text-blue-800" onclick="printShippingLabel('${si.barcode}')">${formatMessage('msg_label_print')}</button>
-                   <button class="text-red-600 hover:text-red-800" onclick="window.confirmShipping('${si.id}')">${formatMessage('msg_confirm_shipping')}</button>`
-                : `<span class="text-green-600">${formatMessage('msg_done')}</span>`}
-              <button class="text-gray-600 hover:text-gray-800" onclick="window.deleteShipping('${si.id}')">${formatMessage('msg_delete_shipping')}</button>
-            </div>`
-          : ''}
+        <div class="flex gap-2">
+          ${si.status !== 'shipped'
+            ? `<button class="text-blue-600 hover:text-blue-800" onclick="printShippingLabel('${si.barcode}')">${formatMessage('msg_label_print')}</button>
+               <button class="text-red-600 hover:text-red-800" onclick="window.confirmShipping('${si.id}')">${formatMessage('msg_confirm_shipping')}</button>`
+            : `<span class="text-green-600">${formatMessage('msg_done')}</span>`}
+          <button class="text-gray-600 hover:text-gray-800" onclick="window.deleteShipping('${si.id}')">${formatMessage('msg_delete_shipping')}</button>
+        </div>
       </td>
     `;
     matchingListBody.appendChild(tr);
@@ -558,7 +667,7 @@ window.confirmShipping = async function(shippingInstructionId) {
     // 1. shipping_instruction의 shipping_date 가져오기
     const { data: si, error: siError } = await supabase
       .from('shipping_instruction')
-      .select('shipping_date, label_id')
+      .select('shipping_date, label_id, container_no')
       .eq('id', shippingInstructionId)
       .single();
     if (siError) throw siError;
@@ -589,7 +698,7 @@ window.confirmShipping = async function(shippingInstructionId) {
     if (statusError) throw statusError;
 
     // 4. receiving_items의 location_code를 null로 업데이트
-    // 4.1 shipping_instruction의 label_id가 있으면 해당 항목만 업데이트
+    // 4.1 shipping_instruction의 label_id가 있으면 해당 항목만 업데이트 (단일 라벨인 경우)
     if (si.label_id) {
       console.log('Using shipping_instruction label_id:', si.label_id);
       const { data: updateData, error: updateLocError } = await supabase
@@ -603,7 +712,7 @@ window.confirmShipping = async function(shippingInstructionId) {
       }
       console.log('Updated receiving_items with si.label_id:', updateData);
     } else {
-      // 4.2 shipping_instruction_items의 label_id들로 업데이트
+      // 4.2 shipping_instruction_items의 모든 label_id들로 업데이트 (여러 파트인 경우)
       console.log('Fetching shipping_instruction_items for id:', shippingInstructionId);
       const { data: shippedItems, error: shippedItemsError } = await supabase
         .from('shipping_instruction_items')
@@ -631,7 +740,22 @@ window.confirmShipping = async function(shippingInstructionId) {
         }
         console.log('Updated receiving_items:', updateData);
       } else {
-        console.log('No label_ids found to update');
+        // 4.3 shipping_instruction_items에 label_id가 없는 경우, container_no로 업데이트
+        console.log('No label_ids found in shipping_instruction_items, using container_no:', si.container_no);
+        if (si.container_no) {
+          const { data: updateData, error: updateLocError } = await supabase
+            .from('receiving_items')
+            .update({ location_code: null })
+            .eq('container_no', si.container_no)
+            .select();
+          if (updateLocError) {
+            console.error('Error updating receiving_items with container_no:', updateLocError);
+            throw updateLocError;
+          }
+          console.log('Updated receiving_items with container_no:', updateData);
+        } else {
+          console.log('No container_no found to update');
+        }
       }
     }
 

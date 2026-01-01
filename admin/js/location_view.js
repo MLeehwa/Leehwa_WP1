@@ -114,134 +114,43 @@ function formatMessage(key, params = {}) {
   return message;
 }
 
-// 실제 도면 이미지 위에 맞춰 각 Location의 x, y, width, height를 개별 지정 (수정/확장 용이)
-const layout = [
-  // 예시: { code: 'A-01', x: 40, y: 40, width: 60, height: 30 }
-  // A열 (왼쪽 세로)
-  { code: 'A-01', x: 2, y: 1, width: 60, height: 20 },
-  { code: 'A-02', x: 2, y: 25, width: 60, height: 20 },
-  { code: 'A-03', x: 2, y: 49, width: 60, height: 20 },
-  { code: 'A-04', x: 2, y: 73, width: 60, height: 20 },
-  { code: 'A-05', x: 2, y: 97, width: 60, height: 20 },
-  { code: 'A-06', x: 2, y: 121, width: 60, height: 20 },
-  { code: 'A-07', x: 2, y: 145, width: 60, height: 20 },
-  { code: 'A-08', x: 2, y: 169, width: 60, height: 20 },
-  { code: 'A-09', x: 2, y: 193, width: 60, height: 20 },
-  { code: 'A-10', x: 2, y: 217, width: 60, height: 20 },
-  { code: 'A-11', x: 2, y: 241, width: 60, height: 20 },
-  { code: 'A-12', x: 2, y: 265, width: 60, height: 20 },
-  { code: 'A-13', x: 2, y: 289, width: 60, height: 20 },
-  { code: 'A-14', x: 2, y: 313, width: 60, height: 20 },
-  { code: 'A-15', x: 2, y: 337, width: 60, height: 8 },
-  { code: 'A-151', x: 2, y: 347, width: 60, height: 8 },
-  { code: 'A-16', x: 2, y: 361, width: 60, height: 20 },
-  { code: 'A-17', x: 2, y: 385, width: 60, height: 20 },
-  { code: 'A-18', x: 2, y: 409, width: 60, height: 20 },
-  { code: 'A-19', x: 2, y: 433, width: 60, height: 20 },
-  { code: 'A-20', x: 2, y: 457, width: 60, height: 20 },
-  { code: 'A-21', x: 2, y: 481, width: 60, height: 20 },
-  { code: 'A-22', x: 2, y: 505, width: 60, height: 20 },
-  { code: 'A-23', x: 2, y: 529, width: 60, height: 20 },
-  { code: 'A-24', x: 2, y: 553, width: 60, height: 20 },
-  { code: 'A-25', x: 2, y: 577, width: 60, height: 20 },
-  // B열 (A열 오른쪽)
-  { code: 'B-01', x: 115, y: 1, width: 60, height: 20 },
-  { code: 'B-02', x: 115, y: 25, width: 60, height: 20 },
-  { code: 'B-03', x: 115, y: 49, width: 60, height: 20 },
-  { code: 'B-04', x: 115, y: 73, width: 60, height: 20 },
-  { code: 'B-05', x: 115, y: 97, width: 60, height: 20 },
-  { code: 'B-06', x: 115, y: 121, width: 60, height: 20 },
-  { code: 'B-07', x: 115, y: 145, width: 60, height: 20 },
-  { code: 'B-08', x: 115, y: 169, width: 60, height: 20 },
-  { code: 'B-11', x: 115, y: 241, width: 60, height: 20 },
-  { code: 'B-12', x: 115, y: 265, width: 60, height: 8 },
-  { code: 'B-121', x: 115, y: 275, width: 60, height: 8 },
-  { code: 'B-13', x: 115, y: 289, width: 60, height: 20 },
-  { code: 'B-14', x: 115, y: 313, width: 60, height: 20 },
-  { code: 'B-15', x: 115, y: 337, width: 60, height: 8 },
-  { code: 'B-151', x: 115, y: 347, width: 60, height: 8 },
-  { code: 'B-16', x: 115, y: 361, width: 60, height: 20 },
-  { code: 'B-17', x: 115, y: 385, width: 60, height: 20 },
-  { code: 'B-18', x: 115, y: 409, width: 60, height: 20 },
-  { code: 'B-19', x: 115, y: 433, width: 60, height: 20 },
-  { code: 'B-20', x: 115, y: 457, width: 60, height: 20 },
-  { code: 'B-21', x: 115, y: 481, width: 60, height: 20 },
-  { code: 'B-22', x: 115, y: 505, width: 60, height: 20 },
-  { code: 'B-23', x: 115, y: 529, width: 60, height: 20 },
-  { code: 'B-24', x: 115, y: 553, width: 60, height: 20 },
-  // C열 (중앙 왼쪽)
-  { code: 'C-01', x: 230, y: 217, width: 60, height: 20 },
-  { code: 'C-02', x: 230, y: 241, width: 60, height: 20 },
-  { code: 'C-03', x: 230, y: 265, width: 60, height: 20 },
-  { code: 'C-04', x: 230, y: 289, width: 60, height: 20 },
-  { code: 'C-05', x: 230, y: 313, width: 60, height: 20 },
-  { code: 'C-06', x: 230, y: 337, width: 60, height: 20 },
-  { code: 'C-07', x: 230, y: 361, width: 60, height: 20 },
-  { code: 'C-08', x: 230, y: 385, width: 60, height: 20 },
-  { code: 'C-09', x: 230, y: 409, width: 60, height: 20 },
-  { code: 'C-10', x: 230, y: 433, width: 60, height: 20 },
-  { code: 'C-11', x: 230, y: 457, width: 60, height: 20 },
-  { code: 'C-12', x: 230, y: 481, width: 60, height: 20 },
-  { code: 'C-13', x: 230, y: 505, width: 60, height: 20 },
-  { code: 'C-14', x: 230, y: 529, width: 60, height: 20 },
-  { code: 'C-15', x: 230, y: 553, width: 60, height: 20 },
-  // D열 (중앙)
-  { code: 'D-00', x: 292, y: 195, width: 60, height: 20 },
-  { code: 'D-01', x: 292, y: 217, width: 60, height: 20 },
-  { code: 'D-02', x: 292, y: 241, width: 60, height: 20 },
-  { code: 'D-03', x: 292, y: 265, width: 60, height: 20 },
-  { code: 'D-04', x: 292, y: 289, width: 60, height: 20 },
-  { code: 'D-05', x: 292, y: 313, width: 60, height: 20 },
-  { code: 'D-06', x: 292, y: 337, width: 60, height: 20 },
-  { code: 'D-07', x: 292, y: 361, width: 60, height: 20 },
-  { code: 'D-08', x: 292, y: 385, width: 60, height: 20 },
-  { code: 'D-09', x: 292, y: 409, width: 60, height: 20 },
-  { code: 'D-10', x: 292, y: 433, width: 60, height: 20 },
-  { code: 'D-11', x: 292, y: 457, width: 60, height: 20 },
-  { code: 'D-12', x: 292, y: 481, width: 60, height: 20 },
-  { code: 'D-13', x: 292, y: 505, width: 60, height: 20 },
-  { code: 'D-14', x: 292, y: 529, width: 60, height: 20 },
-  { code: 'D-15', x: 292, y: 553, width: 60, height: 20 },
-  // E열 (중앙 오른쪽)
-  { code: 'E-00', x: 450, y: 195, width: 60, height: 20 },
-  { code: 'E-01', x: 450, y: 217, width: 60, height: 20 },
-  { code: 'E-02', x: 450, y: 241, width: 60, height: 20 },
-  { code: 'E-03', x: 450, y: 265, width: 60, height: 20 },
-  { code: 'E-04', x: 450, y: 289, width: 60, height: 20 },
-  { code: 'E-05', x: 450, y: 313, width: 60, height: 20 },
-  { code: 'E-06', x: 450, y: 337, width: 60, height: 20 },
-  { code: 'E-07', x: 450, y: 361, width: 60, height: 20 },
-  { code: 'E-08', x: 450, y: 385, width: 60, height: 20 },
-  { code: 'E-09', x: 450, y: 409, width: 60, height: 20 },
-  { code: 'E-10', x: 450, y: 433, width: 60, height: 20 },
-  { code: 'E-11', x: 450, y: 457, width: 60, height: 20 },
-  { code: 'E-12', x: 450, y: 481, width: 60, height: 20 },
+// 위치 레이아웃을 데이터베이스에서 동적으로 로드
+let layout = [];
 
-  // F열 (중앙 맨 오른쪽)
-  { code: 'F-00', x: 512, y: 195, width: 60, height: 20 },
-  { code: 'F-01', x: 512, y: 217, width: 60, height: 20 },
-  { code: 'F-02', x: 512, y: 241, width: 60, height: 20 },
-  { code: 'F-03', x: 512, y: 265, width: 60, height: 20 },
-  { code: 'F-04', x: 512, y: 289, width: 60, height: 20 },
-  { code: 'F-05', x: 512, y: 313, width: 60, height: 20 },
-  { code: 'F-06', x: 512, y: 337, width: 60, height: 20 },
-  { code: 'F-07', x: 512, y: 361, width: 60, height: 20 },
-  { code: 'F-08', x: 512, y: 385, width: 60, height: 20 },
-  { code: 'F-09', x: 512, y: 409, width: 60, height: 20 },
-  { code: 'F-10', x: 512, y: 433, width: 60, height: 20 },
-  { code: 'F-11', x: 512, y: 457, width: 60, height: 20 },
-  { code: 'F-12', x: 512, y: 481, width: 60, height: 20 },
-  // G열 (노란 영역 아래)
-
-  { code: 'G-03', x: 450, y: 505, width: 120, height: 20 },
-  { code: 'G-04', x: 450, y: 529, width: 120, height: 20 },
-  { code: 'G-05', x: 450, y: 553, width: 120, height: 20 },
-
-    // H열 (노란 영역 아래)
-  { code: 'H-09', x: 600, y: 409, width: 60, height: 20 },
-  { code: 'H-10', x: 600, y: 433, width: 60, height: 20 },
-  { code: 'H-11', x: 600, y: 457, width: 60, height: 20 },
-];
+// 데이터베이스에서 위치 레이아웃 로드
+async function loadLocationLayout() {
+  try {
+    const { data, error } = await supabase
+      .from('wp1_locations')
+      .select('location_code, x, y, width, height, status')
+      .order('location_code');
+    
+    if (error) {
+      console.error('위치 레이아웃 로드 실패:', error);
+      // 에러 발생 시 빈 배열 반환
+      layout = [];
+      return;
+    }
+    
+    // 좌표 정보가 있는 위치만 레이아웃에 포함 (모든 상태 포함, disabled/maintenance도 표시)
+    // 위치 코드를 정규화하여 저장 (A1 -> A-01)
+    layout = (data || [])
+      .filter(loc => loc.x !== null && loc.y !== null && loc.width !== null && loc.height !== null)
+      .map(loc => ({
+        code: normalizeLocationCode(loc.location_code), // 위치 코드 정규화
+        x: loc.x,
+        y: loc.y,
+        width: loc.width,
+        height: loc.height,
+        status: loc.status // 상태 정보도 저장
+      }));
+    
+    console.log(`위치 레이아웃 로드 완료: ${layout.length}개 위치`);
+  } catch (error) {
+    console.error('위치 레이아웃 로드 중 오류:', error);
+    layout = [];
+  }
+}
 
 // 전역 상태 관리
 let isLocationViewActive = false;
@@ -319,10 +228,8 @@ async function loadOccupied() {
         continue;
       }
       
-      let code = item.location_code;
-      if (/^[A-Z][0-9]{1,2}$/.test(code)) {
-        code = code[0] + '-' + code.slice(1).padStart(2, '0');
-      }
+      // 위치 코드 정규화 (normalizeLocationCode 함수 사용)
+      const code = normalizeLocationCode(item.location_code);
       
       // 같은 위치의 항목들을 그룹화
       if (!locationGroups[code]) {
@@ -430,6 +337,7 @@ function renderLocations(filter = {}) {
   layout.forEach(loc => {
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('data-type', 'location');
+    g.setAttribute('data-location-code', loc.code);
     const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
     rect.setAttribute('x', loc.x);
     rect.setAttribute('y', loc.y);
@@ -438,12 +346,18 @@ function renderLocations(filter = {}) {
     rect.setAttribute('rx', 5);
     // 색상 결정
     let fill = '#86efac'; // 비어있음(연녹색)
-    if (currentOccupied[loc.code]) {
+    
+    // 사용 불가 또는 점검중인 경우 주황색으로 표시 (최우선)
+    if (loc.status === 'disabled' || loc.status === 'maintenance') {
+      fill = '#fb923c'; // 주황색
+    } else if (currentOccupied[loc.code]) {
       if (currentOccupied[loc.code].received) fill = '#fca5a5'; // 입고 완료(연빨강)
       else fill = '#a5b4fc'; // 예약/미입고(연파랑)
     }
-    if (filteredCodes.has(loc.code)) fill = '#fde047'; // 필터 일치(노랑)
-    if (filter.product && loc.code === oldestCode) fill = '#fb923c'; // 제품명+가장 오래된 입고(주황)
+    
+    // 필터 일치 시 노랑 (사용 불가/점검중이 아닌 경우에만)
+    if (fill !== '#fb923c' && filteredCodes.has(loc.code)) fill = '#fde047'; // 필터 일치(노랑)
+    if (fill !== '#fb923c' && filter.product && loc.code === oldestCode) fill = '#fb923c'; // 제품명+가장 오래된 입고(주황)
     rect.setAttribute('fill', fill);
     rect.setAttribute('stroke', '#333');
     rect.setAttribute('stroke-width', 1.5);
@@ -460,18 +374,180 @@ function renderLocations(filter = {}) {
     g.appendChild(text);
     // 클릭 이벤트
     g.addEventListener('click', () => {
-      if (!currentOccupied[loc.code]) {
-        alert('데이터가 아직 로드되지 않았습니다. 잠시 후 다시 시도해 주세요.');
-        return;
+      // 빈 위치도 클릭 가능하도록 수정
+      if (currentOccupied[loc.code]) {
+        showLocationModal(loc.code, currentOccupied[loc.code]);
+      } else {
+        // 빈 위치 클릭 시 정보 표시
+        showLocationModal(loc.code, null);
       }
-      showLocationModal(loc.code, currentOccupied[loc.code]);
     });
     svg.appendChild(g);
   });
 }
 
+// location_code 포맷 통일 함수 ('A1', 'A-01', 'A 01' 등 모두 'A-01'로 변환)
+function normalizeLocationCode(code) {
+  if (!code) return code;
+  const match = code.match(/^([A-Z])[- ]?(\d{1,2})$/i);
+  if (match) {
+    const letter = match[1].toUpperCase();
+    const num = match[2].padStart(2, '0');
+    return `${letter}-${num}`;
+  }
+  return code.trim();
+}
+
+// 사용 가능한 위치 목록 가져오기 (빈 위치만)
+async function getAvailableLocationsForView() {
+  try {
+    // 1. status='available'이고 disabled가 아닌 위치 목록
+    const { data: locations, error: locError } = await supabase
+      .from('wp1_locations')
+      .select('location_code')
+      .eq('status', 'available')
+      .neq('status', 'disabled')
+      .order('location_code');
+    if (locError || !locations || locations.length === 0) return [];
+
+    // 2. 입고 완료된 항목의 위치 조회 (receiving_log 확인)
+    const { data: receivedItems, error: receivedError } = await supabase
+      .from('receiving_log')
+      .select('label_id');
+    
+    if (receivedError) {
+      console.error('Error loading receiving_log:', receivedError);
+      return [];
+    }
+    
+    const receivedLabelIds = new Set((receivedItems || []).map(l => String(l.label_id)));
+    
+    // 3. receiving_items에서 입고 완료된 항목의 위치 조회
+    const { data: allItems, error: itemsError } = await supabase
+      .from('receiving_items')
+      .select('location_code, label_id');
+    
+    if (itemsError) {
+      console.error('Error loading receiving_items:', itemsError);
+      return [];
+    }
+    
+    // 4. 출고 완료된 항목 제외
+    const { data: shippedItems } = await supabase
+      .from('shipping_instruction_items')
+      .select('label_id, shipped_at');
+    
+    const shippedLabelIds = new Set(
+      (shippedItems || [])
+        .filter(i => i.shipped_at)
+        .map(i => String(i.label_id))
+    );
+    
+    // 5. 점유된 위치 코드 집합 생성
+    const occupiedCodes = new Set();
+    (allItems || []).forEach(item => {
+      if (!item.location_code) return;
+      const labelId = String(item.label_id);
+      // 입고 완료되었고 출고되지 않은 항목만 점유로 간주
+      if (receivedLabelIds.has(labelId) && !shippedLabelIds.has(labelId)) {
+        const normCode = normalizeLocationCode(item.location_code);
+        occupiedCodes.add(normCode);
+      }
+    });
+    
+    // 6. 사용 가능한 위치 필터링
+    const available = locations
+      .map(loc => loc.location_code)
+      .filter(locCode => {
+        const normCode = normalizeLocationCode(locCode);
+        return !occupiedCodes.has(normCode);
+      });
+    
+    return available;
+  } catch (error) {
+    console.error('Error in getAvailableLocationsForView:', error);
+    return [];
+  }
+}
+
+// 빈 위치 드롭다운 로드
+async function loadEmptyLocationDropdown() {
+  const emptyLocationSelect = document.getElementById('emptyLocationSelect');
+  if (!emptyLocationSelect) return;
+  
+  emptyLocationSelect.innerHTML = '<option value="">로딩 중...</option>';
+  const available = await getAvailableLocationsForView();
+  emptyLocationSelect.innerHTML = '<option value="">빈 위치 목록...</option>';
+  
+  if (available.length === 0) {
+    emptyLocationSelect.innerHTML = '<option value="">사용 가능한 위치가 없습니다</option>';
+    return;
+  }
+  
+  available.forEach(loc => {
+    const option = document.createElement('option');
+    option.value = loc;
+    option.textContent = loc;
+    emptyLocationSelect.appendChild(option);
+  });
+  
+  // 드롭다운 선택 시 해당 위치로 스크롤 및 하이라이트
+  const changeHandler = async (e) => {
+    if (e.target.value) {
+      const selectedCode = normalizeLocationCode(e.target.value);
+      // SVG에서 해당 위치 찾기
+      const locationGroups = document.querySelectorAll('#locationSVG g[data-type="location"]');
+      let found = false;
+      locationGroups.forEach(g => {
+        const rect = g.querySelector('rect');
+        const text = g.querySelector('text');
+        const locationCode = g.getAttribute('data-location-code');
+        const codeToCheck = locationCode || (text ? text.textContent : '');
+        if (normalizeLocationCode(codeToCheck) === selectedCode) {
+          found = true;
+          // 위치 하이라이트
+          rect.setAttribute('stroke', '#ff0000');
+          rect.setAttribute('stroke-width', '3');
+          // SVG 컨테이너 스크롤
+          const svg = document.getElementById('locationSVG');
+          if (svg) {
+            const rectBounds = rect.getBBox();
+            const svgBounds = svg.getBoundingClientRect();
+            const scrollX = rectBounds.x + rectBounds.width / 2 - svgBounds.width / 2;
+            const scrollY = rectBounds.y + rectBounds.height / 2 - svgBounds.height / 2;
+            svg.parentElement.scrollTo({
+              left: scrollX,
+              top: scrollY,
+              behavior: 'smooth'
+            });
+          }
+          // 클릭 이벤트 트리거하여 정보 표시
+          setTimeout(() => {
+            g.click();
+          }, 300);
+        } else {
+          // 다른 위치는 원래 스타일로
+          rect.setAttribute('stroke', '#333');
+          rect.setAttribute('stroke-width', '1.5');
+        }
+      });
+      if (!found) {
+        // 위치를 찾지 못한 경우 빈 위치로 표시
+        showLocationModal(selectedCode, null);
+      }
+    }
+  };
+  
+  // 기존 이벤트 리스너 제거 후 새로 추가
+  emptyLocationSelect.removeEventListener('change', changeHandler);
+  emptyLocationSelect.addEventListener('change', changeHandler);
+}
+
 // Location View 초기화
-function resetLocationView() {
+async function resetLocationView() {
+  // 위치 레이아웃 먼저 로드
+  await loadLocationLayout();
+  
   // SVG 완전 교체
   const oldSVG = document.getElementById('locationSVG');
   let newSVG;
@@ -820,7 +896,7 @@ function showLocationModal(loc, info) {
       }
     })();
   } else {
-    sidePanelBody.innerHTML = `<div class='text-gray-500'>비어있음</div>`;
+    sidePanelBody.innerHTML = `<div class='text-green-600 font-semibold'>✓ 빈 위치 (사용 가능)</div>`;
     shippingOrderArea.innerHTML = '';
   }
 }

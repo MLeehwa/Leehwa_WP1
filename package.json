@@ -1,0 +1,14 @@
+{
+  "name": "lhw-wp1",
+  "version": "1.0.0",
+  "description": "Warehouse Management System",
+  "scripts": {
+    "dev": "live-server --port=3000 --open=/index.html",
+    "start": "live-server --port=3000 --open=/index.html",
+    "serve": "http-server -p 3000 -o"
+  },
+  "devDependencies": {
+    "live-server": "^1.2.2",
+    "http-server": "^14.1.1"
+  }
+}

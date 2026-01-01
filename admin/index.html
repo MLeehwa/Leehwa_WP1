@@ -88,7 +88,10 @@
     window.addEventListener('load', () => {
       if (!checkAuth()) return;
       console.log('Window loaded');
+      console.log('Current URL:', window.location.href);
+      console.log('Current hash:', window.location.hash);
       const section = window.location.hash.slice(1) || 'receiving_plan';
+      console.log('Loading section:', section);
       loadSection(section);
     });
   </script>
@@ -96,7 +99,7 @@
 <body class="bg-gray-100 min-h-screen">
   <div class="flex min-h-screen">
     <!-- Sidebar -->
-    <aside class="w-150 bg-gray-800 text-white p-6">
+    <aside style="width: 256px; background-color: #1f2937; color: white; padding: 24px; min-height: 100vh; border-right: 4px solid #3b82f6; flex-shrink: 0; position: fixed; left: 0; top: 0; z-index: 1000;">
       <div class="mb-8 flex justify-between items-center">
         <div>
           <div class="text-2xl font-bold mb-2" data-i18n="admin_title">WMS Admin</div>
@@ -107,13 +110,25 @@
           <button class="lang-btn px-3 py-1 rounded bg-gray-300 text-gray-800 text-sm" data-lang="en">English</button>
         </div>
       </div>
-      <nav class="space-y-2">
-        <a href="#receiving_plan" class="block py-2 px-3 rounded hover:bg-gray-700" data-i18n="menu_receiving">Receiving Plan</a>
-        <a href="#location_view" class="block py-2 px-3 rounded hover:bg-gray-700" data-i18n="menu_location">Location View</a>
-        <a href="#shipping_confirmation_admin" class="block py-2 px-3 rounded hover:bg-gray-700" data-i18n="menu_shipping">Shipping Confirmation</a>
-        <a href="#report" class="block py-2 px-3 rounded hover:bg-gray-700" data-i18n="menu_report">Report</a>
-        <a href="#daily_report" class="block py-2 px-3 rounded hover:bg-blue-700 bg-blue-600 text-white font-bold">일일 입출고 리포트</a>
-        <a href="location_master.html" target="_blank" class="block py-2 px-3 rounded hover:bg-gray-700 bg-green-700 text-white font-bold">장소 마스터 관리</a>
+      <nav style="margin-top: 16px;">
+        <div style="display: block; padding: 12px 16px; margin-bottom: 8px; background-color: #374151; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500;">
+          <a href="#receiving_plan" style="color: white; text-decoration: none;" data-i18n="menu_receiving">📦 Receiving Plan</a>
+        </div>
+        <div style="display: block; padding: 12px 16px; margin-bottom: 8px; background-color: #374151; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500;">
+          <a href="#location_view" style="color: white; text-decoration: none;" data-i18n="menu_location">📍 Location View</a>
+        </div>
+        <div style="display: block; padding: 12px 16px; margin-bottom: 8px; background-color: #374151; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500;">
+          <a href="#shipping_confirmation_admin" style="color: white; text-decoration: none;" data-i18n="menu_shipping">🚚 Shipping Confirmation</a>
+        </div>
+        <div style="display: block; padding: 12px 16px; margin-bottom: 8px; background-color: #374151; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500;">
+          <a href="#report" style="color: white; text-decoration: none;" data-i18n="menu_report">📊 Report</a>
+        </div>
+        <div style="display: block; padding: 12px 16px; margin-bottom: 8px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: bold;">
+          <a href="#daily_report" style="color: white; text-decoration: none;">📈 일일 입출고 리포트</a>
+        </div>
+        <div style="display: block; padding: 12px 16px; margin-bottom: 8px; background-color: #16a34a; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: bold;">
+          <a href="location_master.html" target="_blank" style="color: white; text-decoration: none;">⚙️ 장소 마스터 관리</a>
+        </div>
       </nav>
       <div class="mt-8">
         <button onclick="logout()" class="text-sm text-gray-400 hover:text-white" data-i18n="logout">Logout</button>
@@ -121,7 +136,7 @@
     </aside>
 
     <!-- Main Content Area -->
-    <main class="flex-1 p-10">
+    <main style="flex: 1; padding: 40px; background-color: #f3f4f6; margin-left: 256px;">
       <div id="mainContent" class="w-full mx-auto">
         <h1 class="text-3xl font-bold" data-i18n="welcome">📦 Welcome to WMS Admin</h1>
         <p class="text-gray-600 mt-2" data-i18n="main_guide">Please select a section from the left menu.</p>

@@ -23,12 +23,12 @@
     <button id="filterBtn" class="bg-blue-500 text-white rounded px-4 py-1 text-sm font-semibold" data-i18n="btn_search">검색</button>
     <button id="resetBtn" class="bg-gray-300 text-gray-700 rounded px-4 py-1 text-sm font-semibold" data-i18n="btn_reset">초기화</button>
   </div>
-  <div class="flex gap-4">
+  <div class="flex flex-col lg:flex-row gap-4">
     <div class="flex-1 min-w-0">
       <div class="w-full overflow-auto">
         <svg id="locationSVG"
              viewBox="0 0 835 667"
-             class="w-full h-[80vh] max-w-full"
+             class="w-full h-[60vh] lg:h-[80vh] max-w-full"
              style="background:#f8fafc; border:1.5px solid #333; box-shadow:0 2px 12px #0002;">
           <!-- === 공장 도면(회색 외곽) ===
             - 각 구역은 <rect>로 구성
@@ -53,9 +53,9 @@
         </svg>
       </div>
     </div>
-    <div id="locationSidePanel" class="w-72 md:w-96 lg:w-[420px] bg-white p-4 rounded shadow-lg h-[80vh] overflow-y-auto flex-shrink-0">
+    <div id="locationSidePanel" class="w-full lg:w-72 md:w-96 lg:w-[420px] bg-white p-4 rounded shadow-lg h-[40vh] lg:h-[80vh] overflow-y-auto flex-shrink-0">
       <div class="mb-4">
-        <h2 id="sidePanelLocationTitle" class="text-xl font-bold" data-i18n="title_location_info">Location Info</h2>
+        <h2 id="sidePanelLocationTitle" class="text-xl font-bold mb-2" data-i18n="title_location_info">Location Info</h2>
       </div>
       <div id="sidePanelLocationBody" class="mb-4 text-gray-500" data-i18n="text_select_location">좌측에서 위치를 선택하세요.</div>
       <div id="shippingOrderArea"></div>

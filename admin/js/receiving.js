@@ -419,7 +419,11 @@ function initializeEventListeners() {
         console.log('submitPlanBtn:', submitPlanBtn);
         const type = document.getElementById("typeSelect").value;
         let container = document.getElementById("containerInput").value.trim();
-        const location = document.getElementById("locationInput").value.trim();
+        let location = document.getElementById("locationInput").value.trim();
+        // 위치 코드 정규화 (A1 -> A-01)
+        if (location) {
+          location = normalizeLocationCode(location);
+        }
         const receivingPlace = document.getElementById("receivingPlaceInput")?.value.trim() || '';
         const receiveDate = document.getElementById("receiveDateInput").value;
         const parts = Array.from(document.querySelectorAll(".part-input")).map(el => el.value.trim());
@@ -577,20 +581,62 @@ async function loadPlans(applyFilter = false) {
   if (!initializeElements()) return;
 
   if (!applyFilter) {
-    // 필터 없이도 최근 5개 데이터를 보여주기
+    // 필터 없이도 오늘 날짜 + 과거 미확정 데이터 보여주기
     try {
-      const { data: recentPlans, error } = await window.supabase
+      // 오늘 날짜 구하기 (YYYY-MM-DD 형식)
+      const today = new Date().toISOString().split('T')[0];
+      
+      // 1. 오늘 날짜인 계획 조회
+      const { data: todayPlans, error: todayError } = await window.supabase
         .from('receiving_plan')
         .select(`
           *,
           receiving_items (*)
         `)
-        .order('created_at', { ascending: false })
-        .limit(5);
+        .eq('receive_date', today)
+        .order('id', { ascending: false });
 
-      if (error) throw error;
+      if (todayError) throw todayError;
 
-      if (!recentPlans || recentPlans.length === 0) {
+      // 2. 과거 날짜 계획 조회 (최근 30일)
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
+      
+      const { data: pastPlans, error: pastError } = await window.supabase
+        .from('receiving_plan')
+        .select(`
+          *,
+          receiving_items (*)
+        `)
+        .lt('receive_date', today)
+        .gte('receive_date', thirtyDaysAgoStr)
+        .order('id', { ascending: false });
+
+      if (pastError) throw pastError;
+
+      // 3. receiving_log 조회하여 입고 확정된 label_id 확인
+      const { data: logs, error: logError } = await window.supabase
+        .from('receiving_log')
+        .select('label_id');
+      
+      if (logError) throw logError;
+      const receivedLabelIds = new Set((logs || []).map(l => String(l.label_id)));
+
+      // 4. 과거 계획 중 입고 확정이 안 된 것만 필터링
+      const unconfirmedPastPlans = (pastPlans || []).filter(plan => {
+        const items = (plan && Array.isArray(plan.receiving_items)) ? plan.receiving_items : [];
+        // 모든 items가 입고 확정되지 않은 경우만 포함
+        return items.length > 0 && items.some(item => !receivedLabelIds.has(String(item.label_id)));
+      });
+
+      // 5. 오늘 계획 + 미확정 과거 계획 합치기
+      const allPlans = [...(todayPlans || []), ...unconfirmedPastPlans];
+      
+      // id로 정렬 (최근 생성 순)
+      allPlans.sort((a, b) => (b.id || 0) - (a.id || 0));
+
+      if (allPlans.length === 0) {
         planListBody.innerHTML = `
           <tr>
             <td colspan="12" class="text-center py-4 text-muted">
@@ -603,7 +649,11 @@ async function loadPlans(applyFilter = false) {
       }
 
       // 최근 데이터 표시
-      await displayPlans(recentPlans);
+      await displayPlans(allPlans);
+      
+      // 이벤트 리스너 바인딩
+      isEventListenersBound = false;
+      bindEventListeners();
       return;
     } catch (error) {
       console.error('최근 데이터 로드 실패:', error);
@@ -683,6 +733,8 @@ async function loadPlans(applyFilter = false) {
     await displayPlans(plans);
 
     // 7. 이벤트 리스너 바인딩 (반드시 planListBody.innerHTML 이후 호출)
+    // displayPlans 후 planListBody가 다시 초기화되므로 플래그 리셋
+    isEventListenersBound = false;
     bindEventListeners();
 
   } catch (error) {
@@ -699,25 +751,53 @@ async function loadPlans(applyFilter = false) {
 }
 
 // 이벤트 리스너 바인딩
+let isEventListenersBound = false;
+
 function bindEventListeners() {
   console.log('Binding event listeners...');  // 디버깅용 로그
 
-  // Delete 버튼
-  document.querySelectorAll(".delete-btn").forEach(btn => {
-    btn.addEventListener("click", handleDelete);
-  });
-
-  // 강제입고 버튼
-  document.querySelectorAll(".force-receive-btn").forEach(btn => {
-    btn.addEventListener("click", function(e) {
-      const labelIds = e.target.dataset.labelIds;
-      if (labelIds) {
-        pendingForceReceive = labelIds.split(',');
-        forceReceiveDate.value = new Date().toISOString().split('T')[0];
-        forceReceiveModal.classList.remove('hidden');
+  // Delete 버튼 및 강제입고 버튼 - 이벤트 위임 사용
+  // planListBody에 직접 이벤트 리스너 등록 (한 번만)
+  if (planListBody && !isEventListenersBound) {
+    console.log('Registering click event listener on planListBody');
+    planListBody.addEventListener("click", function(e) {
+      console.log('Click event detected on planListBody', e.target);
+      
+      // Delete 버튼 클릭 처리
+      const deleteBtn = e.target.closest(".delete-btn");
+      if (deleteBtn) {
+        // 비활성화된 버튼은 클릭 무시
+        if (deleteBtn.disabled) {
+          console.log('Delete button is disabled (already received)');
+          return false;
+        }
+        console.log('Delete button clicked', deleteBtn);
+        e.preventDefault();
+        e.stopPropagation();
+        handleDelete(e);
+        return false;
+      }
+      
+      // 강제입고 버튼 클릭 처리
+      const forceBtn = e.target.closest(".force-receive-btn");
+      if (forceBtn) {
+        console.log('Force receive button clicked', forceBtn);
+        const labelIds = forceBtn.dataset.labelIds;
+        if (labelIds) {
+          pendingForceReceive = labelIds.split(',');
+          forceReceiveDate.value = new Date().toISOString().split('T')[0];
+          forceReceiveModal.classList.remove('hidden');
+        }
+        return false;
       }
     });
-  });
+    isEventListenersBound = true;
+    console.log('Event listeners bound successfully');
+  } else if (!planListBody) {
+    console.error('planListBody not found, cannot bind event listeners');
+  } else {
+    console.log('Event listeners already bound');
+  }
 
   // Force Receive Modal Buttons (항상 최신 DOM에 바인딩)
   ['confirmForceReceive', 'cancelForceReceive'].forEach(id => {
@@ -774,19 +854,48 @@ function bindEventListeners() {
 
 // Delete 핸들러
 async function handleDelete(event) {
-  const id = event.target.dataset.id;
-  if (!confirm(formatMessage('msg_confirm_delete'))) return;
+  console.log('handleDelete called', event);
+  
+  // 이벤트 위임을 고려하여 버튼 요소 찾기
+  const deleteBtn = event.target.closest(".delete-btn");
+  
+  if (!deleteBtn) {
+    console.error('Delete button not found', event.target);
+    return;
+  }
+  
+  console.log('Delete button found', deleteBtn);
+  const id = deleteBtn.dataset.id;
+  console.log('Plan ID:', id);
+  
+  if (!id) {
+    console.error('Plan ID not found in dataset', deleteBtn.dataset);
+    alert('계획 ID를 찾을 수 없습니다.');
+    return;
+  }
+  
+  if (!confirm(formatMessage('msg_confirm_delete'))) {
+    console.log('Delete cancelled by user');
+    return;
+  }
+  
+  console.log('Deleting plan with ID:', id);
   
   try {
     const { error } = await window.supabase.from("receiving_plan").delete().eq("id", id);
-    if (error) throw error;
+    if (error) {
+      console.error('Supabase delete error:', error);
+      throw error;
+    }
+    
+    console.log('Plan deleted successfully');
     
     // 캐시 업데이트
     currentPlans = currentPlans.filter(p => p.id !== parseInt(id));
     currentItems.delete(parseInt(id));
     
     // UI 업데이트
-    loadPlans();
+    await loadPlans();
   } catch (error) {
     console.error('Error deleting record:', error);
     showMessage(
@@ -965,11 +1074,18 @@ export async function initSection() {
   
   // Add New Plan 버튼
   if (addNewPlanBtn) {
-    addNewPlanBtn.addEventListener('click', () => {
+    addNewPlanBtn.addEventListener('click', async () => {
       console.log('Add New Plan button clicked');
       if (addPlanForm) {
         addPlanForm.classList.remove('hidden');
         renderPlanFormButton();
+        // 폼이 열릴 때 드롭다운 이벤트 리스너 다시 설정 및 드롭다운 로드
+        setTimeout(async () => {
+          setupLocationDropdownToggle();
+          attachAutoLocationCheckboxListener();
+          // 드롭다운이 기본이므로 초기 로드
+          await loadAvailableLocationsDropdown();
+        }, 100);
       }
     });
   }
@@ -1062,6 +1178,15 @@ export async function initSection() {
   // 10. 초기 데이터 로드
   console.log('Loading initial data...');
   await loadPlans();
+  
+  // 11. 폼이 열려있으면 드롭다운 설정 (폼이 숨겨져 있으면 Add New Plan 버튼 클릭 시 설정됨)
+  const addPlanForm = document.getElementById('addPlanForm');
+  if (addPlanForm && !addPlanForm.classList.contains('hidden')) {
+    setupLocationDropdownToggle();
+    attachAutoLocationCheckboxListener();
+    // 드롭다운이 기본이므로 초기 로드
+    await loadAvailableLocationsDropdown();
+  }
   
   console.log('=== Receiving section initialization complete ===');
   isInitialized = true;
@@ -1382,7 +1507,41 @@ window.handleSubmitPlan = handleSubmitPlan;
 async function handleSubmitPlan() {
   const type = document.getElementById("typeSelect").value;
   let container = document.getElementById("containerInput").value.trim();
-  const location = document.getElementById("locationInput").value.trim();
+  const locationSelect = document.getElementById("locationSelect");
+  const locationInput = document.getElementById("locationInput");
+  // 드롭다운 또는 입력란에서 위치 가져오기
+  let location = (locationSelect && !locationSelect.classList.contains('hidden') && locationSelect.value) 
+    ? locationSelect.value.trim() 
+    : locationInput.value.trim();
+  // 위치 코드 정규화 (A1 -> A-01)
+  if (location) {
+    location = normalizeLocationCode(location);
+    
+    // 수동 입력인 경우 위치 유효성 검증
+    if (locationInput && !locationInput.classList.contains('hidden') && locationInput.value.trim()) {
+      const { data: locData, error: locError } = await window.supabase
+        .from('wp1_locations')
+        .select('status')
+        .eq('location_code', location)
+        .single();
+      
+      if (locError || !locData) {
+        showMessage(
+          formatMessage('modal_message_title'),
+          `입력한 위치 코드 "${location}"가 위치 마스터에 등록되어 있지 않습니다.`
+        );
+        return;
+      }
+      
+      if (locData.status === 'disabled' || locData.status === 'maintenance') {
+        showMessage(
+          formatMessage('modal_message_title'),
+          `입력한 위치 "${location}"는 ${locData.status === 'disabled' ? '사용 불가' : '점검중'} 상태입니다. 다른 위치를 선택해주세요.`
+        );
+        return;
+      }
+    }
+  }
   const receivingPlace = document.getElementById("receivingPlaceInput")?.value.trim() || '';
   const receiveDate = document.getElementById("receiveDateInput").value;
   const parts = Array.from(document.querySelectorAll(".part-input")).map(el => el.value.trim());
@@ -1539,7 +1698,7 @@ async function loadLocations() {
   const tbody = document.querySelector('#locationTable tbody');
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="4">Loading...</td></tr>';
-  const { data, error } = await window.supabase.from('locations').select('*').order('location_code');
+  const { data, error } = await window.supabase.from('wp1_locations').select('*').order('location_code');
   if (error) {
     tbody.innerHTML = `<tr><td colspan="4" class="text-red-600">Error: ${error.message}</td></tr>`;
     return;
@@ -1572,11 +1731,15 @@ const addLocationForm = document.getElementById('addLocationForm');
 if (addLocationForm) {
   addLocationForm.addEventListener('submit', async function(e) {
     e.preventDefault();
-    const location_code = document.getElementById('locationCodeInput').value.trim();
+    let location_code = document.getElementById('locationCodeInput').value.trim();
     const status = document.getElementById('statusInput').value;
     const remark = document.getElementById('remarkInput').value.trim();
     if (!location_code) return alert('위치코드를 입력하세요.');
-    const { error } = await window.supabase.from('locations').insert({ location_code, status, remark });
+    
+    // 위치 코드 정규화 (A1 -> A-01)
+    location_code = normalizeLocationCode(location_code);
+    
+    const { error } = await window.supabase.from('wp1_locations').insert({ location_code, status, remark });
     if (error) return alert('등록 실패: ' + error.message);
     addLocationForm.reset();
     loadLocations();
@@ -1592,13 +1755,13 @@ if (locationTable) {
       // 수정
       const status = locationTable.querySelector(`select.statusEdit[data-id='${id}']`).value;
       const remark = locationTable.querySelector(`input.remarkEdit[data-id='${id}']`).value;
-      const { error } = await window.supabase.from('locations').update({ status, remark }).eq('id', id);
+      const { error } = await window.supabase.from('wp1_locations').update({ status, remark }).eq('id', id);
       if (error) return alert('수정 실패: ' + error.message);
       loadLocations();
     } else if (e.target.classList.contains('deleteLocBtn')) {
       // 삭제
       if (!confirm('정말 삭제하시겠습니까?')) return;
-      const { error } = await window.supabase.from('locations').delete().eq('id', id);
+      const { error } = await window.supabase.from('wp1_locations').delete().eq('id', id);
       if (error) return alert('삭제 실패: ' + error.message);
       loadLocations();
     }
@@ -1620,38 +1783,163 @@ function normalizeLocationCode(code) {
   return code.trim();
 }
 
+// 사용 가능한 위치 목록 가져오기 (빈 위치만)
+async function getAvailableLocations() {
+  try {
+    // 1. status='available'이고 disabled가 아닌 위치 목록
+    const { data: locations, error: locError } = await window.supabase
+      .from('wp1_locations')
+      .select('location_code')
+      .eq('status', 'available')
+      .neq('status', 'disabled')
+      .order('location_code');
+    if (locError || !locations || locations.length === 0) return [];
+
+    // 2. receiving_items에서 모든 항목의 위치 조회 (입고 확정 여부와 관계없이)
+    const { data: allItems, error: itemsError } = await window.supabase
+      .from('receiving_items')
+      .select('location_code, label_id');
+    
+    if (itemsError) {
+      console.error('Error loading receiving_items:', itemsError);
+      return [];
+    }
+    
+    // 3. 출고 완료된 항목의 label_id 조회 (출고 완료된 항목은 점유에서 제외)
+    const { data: shippedItems } = await window.supabase
+      .from('shipping_instruction_items')
+      .select('label_id, shipped_at');
+    
+    const shippedLabelIds = new Set(
+      (shippedItems || [])
+        .filter(i => i.shipped_at)
+        .map(i => String(i.label_id))
+    );
+    
+    // 4. 점유된 위치 코드 집합 생성
+    // 입고 계획에 할당된 모든 위치를 점유로 간주 (입고 확정 여부와 관계없이)
+    // 단, 출고 완료된 항목은 제외
+    const occupiedCodes = new Set();
+    (allItems || []).forEach(item => {
+      if (!item.location_code) return;
+      const labelId = String(item.label_id);
+      // 출고 완료되지 않은 항목의 위치는 모두 점유로 간주
+      if (!shippedLabelIds.has(labelId)) {
+        const normCode = normalizeLocationCode(item.location_code);
+        occupiedCodes.add(normCode);
+      }
+    });
+    
+    // 6. 사용 가능한 위치 필터링
+    const available = locations
+      .map(loc => loc.location_code)
+      .filter(locCode => {
+        const normCode = normalizeLocationCode(locCode);
+        return !occupiedCodes.has(normCode);
+      });
+    
+    return available;
+  } catch (error) {
+    console.error('Error in getAvailableLocations:', error);
+    return [];
+  }
+}
+
 // 랜덤 사용가능 로케이션 찾기
 async function getRandomAvailableLocation() {
-  // 1. status='available'인 위치 목록
-  const { data: locations, error: locError } = await window.supabase
-    .from('locations')
-    .select('location_code')
-    .eq('status', 'available');
-  if (locError || !locations || locations.length === 0) return null;
-
-  // 2. 점유중 아닌 위치만 필터 (normalizeLocationCode로 비교)
-  const available = [];
-  for (const loc of locations) {
-    const normCode = normalizeLocationCode(loc.location_code);
-    // receiving_items 전체를 불러와서 normalizeLocationCode로 비교
-    const { data: items, error: itemsError } = await window.supabase
-      .from('receiving_items')
-      .select('location_code, status');
-    if (itemsError) continue;
-    const isOccupied = items.some(item =>
-      normalizeLocationCode(item.location_code) === normCode && item.status === 'in_stock'
-    );
-    if (!isOccupied) available.push(loc.location_code); // 원본값으로 push
-  }
+  const available = await getAvailableLocations();
   if (available.length === 0) return null;
-  // 3. 랜덤 선택
+  // 랜덤 선택
   return available[Math.floor(Math.random() * available.length)];
+}
+
+// 빈 위치 드롭다운 로드
+async function loadAvailableLocationsDropdown() {
+  const locationSelect = document.getElementById('locationSelect');
+  if (!locationSelect) return;
+  
+  const available = await getAvailableLocations();
+  locationSelect.innerHTML = '<option value="">빈 위치 선택...</option>';
+  
+  if (available.length === 0) {
+    locationSelect.innerHTML = '<option value="">사용 가능한 위치가 없습니다</option>';
+    return;
+  }
+  
+  available.forEach(loc => {
+    const option = document.createElement('option');
+    option.value = loc;
+    option.textContent = loc;
+    locationSelect.appendChild(option);
+  });
+}
+
+// 빈 위치 보기/숨기기 토글
+function setupLocationDropdownToggle() {
+  const showBtn = document.getElementById('showAvailableLocationsBtn');
+  const hideBtn = document.getElementById('hideAvailableLocationsBtn');
+  const locationSelect = document.getElementById('locationSelect');
+  const locationInput = document.getElementById('locationInput');
+  const autoLocationCheckbox = document.getElementById('autoLocationCheckbox');
+  
+  if (!showBtn || !hideBtn || !locationSelect || !locationInput) {
+    console.log('드롭다운 요소를 찾을 수 없습니다:', {
+      showBtn: !!showBtn,
+      hideBtn: !!hideBtn,
+      locationSelect: !!locationSelect,
+      locationInput: !!locationInput
+    });
+    return;
+  }
+  
+  // 기존 이벤트 리스너 제거 (중복 방지)
+  const newShowBtn = showBtn.cloneNode(true);
+  showBtn.parentNode.replaceChild(newShowBtn, showBtn);
+  const newHideBtn = hideBtn.cloneNode(true);
+  hideBtn.parentNode.replaceChild(newHideBtn, hideBtn);
+  const newLocationSelect = locationSelect.cloneNode(true);
+  locationSelect.parentNode.replaceChild(newLocationSelect, locationSelect);
+  
+  // 새로운 요소 참조
+  const actualShowBtn = document.getElementById('showAvailableLocationsBtn');
+  const actualHideBtn = document.getElementById('hideAvailableLocationsBtn');
+  const actualLocationSelect = document.getElementById('locationSelect');
+  
+  actualShowBtn.addEventListener('click', async () => {
+    console.log('빈 위치 보기 버튼 클릭');
+    await loadAvailableLocationsDropdown();
+    actualLocationSelect.classList.remove('hidden');
+    locationInput.classList.add('hidden');
+    actualShowBtn.classList.add('hidden');
+    actualHideBtn.classList.remove('hidden');
+    if (autoLocationCheckbox) autoLocationCheckbox.checked = false;
+  });
+  
+  actualHideBtn.addEventListener('click', () => {
+    console.log('수동 입력 버튼 클릭');
+    actualLocationSelect.classList.add('hidden');
+    locationInput.classList.remove('hidden');
+    actualShowBtn.classList.remove('hidden');
+    actualHideBtn.classList.add('hidden');
+    actualLocationSelect.value = '';
+  });
+  
+  // 드롭다운 선택 시 입력란에 값 설정
+  actualLocationSelect.addEventListener('change', (e) => {
+    console.log('드롭다운 선택:', e.target.value);
+    if (e.target.value) {
+      locationInput.value = e.target.value;
+    }
+  });
+  
+  console.log('드롭다운 토글 이벤트 리스너 설정 완료');
 }
 
 // 체크박스 이벤트 리스너 직접 연결 함수
 function attachAutoLocationCheckboxListener() {
   const autoLocationCheckbox = document.getElementById('autoLocationCheckbox');
   const locationInput = document.getElementById('locationInput');
+  const locationSelect = document.getElementById('locationSelect');
   const autoLocDiv = document.getElementById('autoLocationInfo');
   if (autoLocationCheckbox && locationInput) {
     // 기존 리스너 제거 후 재등록 (중복 방지)
@@ -1659,6 +1947,11 @@ function attachAutoLocationCheckboxListener() {
     autoLocationCheckbox.addEventListener('change', async function(e) {
       console.log('체크박스 상태 변경:', e.target.checked);
       if (e.target.checked) {
+        // 드롭다운 숨기고 입력란만 사용
+        if (locationSelect) {
+          locationSelect.classList.add('hidden');
+          locationInput.classList.remove('hidden');
+        }
         locationInput.readOnly = true;
         locationInput.value = '';
         locationInput.placeholder = '자동 할당 중...';
@@ -1706,14 +1999,7 @@ function attachAutoLocationCheckboxListener() {
   }
 }
 
-// Add New Plan 버튼 클릭 시마다 체크박스 리스너 연결
-if (addNewPlanBtn) {
-  addNewPlanBtn.addEventListener('click', () => {
-    setTimeout(attachAutoLocationCheckboxListener, 100); // 폼이 열리고 DOM이 렌더된 후 연결
-  });
-}
-// 폼이 이미 열려있는 경우도 대비해서 최초 1회 연결
-setTimeout(attachAutoLocationCheckboxListener, 500);
+// Add New Plan 버튼 클릭 시마다 체크박스 리스너 연결은 initSection에서 처리됨
 
 // 테스트 데이터 생성 함수
 async function createTestData() {
@@ -1820,6 +2106,14 @@ async function displayPlans(plans) {
   const logMap = new Map();
   (logs || []).forEach(log => logMap.set(String(log.label_id), log));
 
+  if (!planListBody) {
+    console.error('planListBody is null in displayPlans');
+    if (!initializeElements()) {
+      console.error('Failed to initialize elements');
+      return;
+    }
+  }
+
   planListBody.innerHTML = plans.map(plan => {
     const items = (plan && Array.isArray(plan.receiving_items)) ? plan.receiving_items : [];
     const partNos = items.map(i => i.part_no).join(', ');
@@ -1834,6 +2128,12 @@ async function displayPlans(plans) {
     if (notReceivedItems.length > 0) {
       forceBtn = `<button class="force-receive-btn text-green-600" data-plan-id="${plan.id}" data-label-ids="${notReceivedItems.map(i => i.label_id).join(',')}">입고</button>`;
     }
+    
+    // DELETE 버튼: 입고 완료된 경우 비활성화
+    const deleteBtnDisabled = allReceived ? 'disabled' : '';
+    const deleteBtnClass = allReceived ? 'delete-btn text-gray-400 cursor-not-allowed' : 'delete-btn text-red-600';
+    const deleteBtnTitle = allReceived ? '입고 완료된 계획은 삭제할 수 없습니다' : '';
+    
     return `
       <tr>
         <td class="px-2 py-2 border text-center"><input type="checkbox" name="planCheckBox" value="${plan.id}"></td>
@@ -1847,7 +2147,7 @@ async function displayPlans(plans) {
         <td class="px-4 py-2 border">${status}</td>
         <td class="px-4 py-2 border">${receivedAts}</td>
         <td class="px-2 py-2 border">
-          <button class="delete-btn text-red-600" data-id="${plan.id}">Delete</button>
+          <button class="${deleteBtnClass}" data-id="${plan.id}" ${deleteBtnDisabled} title="${deleteBtnTitle}">Delete</button>
         </td>
         <td class="px-2 py-2 border">
           ${forceBtn}
@@ -1855,6 +2155,10 @@ async function displayPlans(plans) {
       </tr>
     `;
   }).join('');
+  
+  // displayPlans 후 항상 이벤트 리스너 바인딩
+  isEventListenersBound = false;
+  bindEventListeners();
 }
 
 // 데이터베이스 상태 확인 함수

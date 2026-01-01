@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>위치 데이터 마이그레이션</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+  <script src="config/config.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+  <div class="max-w-4xl mx-auto bg-white shadow-xl rounded-xl p-6">
+    <h1 class="text-3xl font-bold mb-6">위치 데이터 마이그레이션</h1>
+    
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+      <h2 class="text-lg font-semibold text-blue-900 mb-2">안내사항</h2>
+      <ul class="list-disc list-inside text-blue-800 space-y-1">
+        <li>이 페이지는 하드코딩된 위치 정보를 데이터베이스에 자동으로 삽입합니다.</li>
+        <li>이미 존재하는 위치는 건너뛰고, 새로운 위치만 추가됩니다.</li>
+        <li>총 <strong id="totalCount">로딩 중...</strong>개의 위치가 준비되어 있습니다.</li>
+        <li>마이그레이션 후 위치 마스터 관리 페이지에서 확인할 수 있습니다.</li>
+      </ul>
+    </div>
+    
+    <div class="mb-6">
+      <button 
+        id="migrateBtn" 
+        class="bg-green-600 text-white px-8 py-3 rounded-lg text-lg font-semibold hover:bg-green-700 transition-colors">
+        위치 데이터 마이그레이션 시작
+      </button>
+    </div>
+    
+    <div id="resultArea" class="hidden">
+      <h2 class="text-xl font-semibold mb-4">마이그레이션 결과</h2>
+      <div id="resultContent" class="bg-gray-50 border rounded-lg p-4"></div>
+    </div>
+    
+    <div id="progressArea" class="hidden mt-4">
+      <div class="bg-gray-200 rounded-full h-4 mb-2">
+        <div id="progressBar" class="bg-blue-600 h-4 rounded-full transition-all duration-300" style="width: 0%"></div>
+      </div>
+      <p id="progressText" class="text-sm text-gray-600">처리 중...</p>
+    </div>
+  </div>
+  
+  <script>
+    // 스크립트 로드 대기 후 초기화
+    window.addEventListener('load', function() {
+      // migrate_locations.js가 로드될 때까지 대기
+      setTimeout(function() {
+        // 총 위치 개수 표시
+        if (typeof hardcodedLocations !== 'undefined' && hardcodedLocations) {
+          document.getElementById('totalCount').textContent = hardcodedLocations.length;
+        } else {
+          document.getElementById('totalCount').textContent = '오류';
+          console.error('hardcodedLocations가 정의되지 않았습니다.');
+        }
+        
+        // 마이그레이션 버튼 이벤트 리스너
+        const migrateBtn = document.getElementById('migrateBtn');
+        if (migrateBtn) {
+          migrateBtn.addEventListener('click', startMigration);
+        }
+      }, 100);
+    });
+    
+    // 마이그레이션 시작 함수
+    async function startMigration() {
+      // migrateLocations 함수 확인
+      if (typeof migrateLocations === 'undefined') {
+        alert('마이그레이션 스크립트가 로드되지 않았습니다. 페이지를 새로고침하세요.');
+        console.error('migrateLocations 함수를 찾을 수 없습니다.');
+        return;
+      }
+      
+      const migrateBtn = document.getElementById('migrateBtn');
+      const resultArea = document.getElementById('resultArea');
+      const resultContent = document.getElementById('resultContent');
+      const progressArea = document.getElementById('progressArea');
+      const progressBar = document.getElementById('progressBar');
+      const progressText = document.getElementById('progressText');
+      
+      if (!confirm('위치 데이터 마이그레이션을 시작하시겠습니까?\n\n이미 존재하는 위치는 건너뛰고, 새로운 위치만 추가됩니다.')) {
+        return;
+      }
+      
+      migrateBtn.disabled = true;
+      migrateBtn.textContent = '마이그레이션 중...';
+      resultArea.classList.add('hidden');
+      progressArea.classList.remove('hidden');
+      progressBar.style.width = '0%';
+      progressText.textContent = '시작 중...';
+      
+      try {
+        const result = await window.migrateLocations();
+        
+        // 결과 표시
+        let resultHtml = `
+          <div class="space-y-2">
+            <div class="flex items-center gap-2">
+              <span class="text-green-600 font-bold">✓ 성공:</span>
+              <span class="text-lg">${result.success}개</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-blue-600 font-bold">⊘ 건너뜀:</span>
+              <span class="text-lg">${result.skip}개 (이미 존재)</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-red-600 font-bold">✗ 실패:</span>
+              <span class="text-lg">${result.error}개</span>
+            </div>
+        `;
+        
+        if (result.errors && result.errors.length > 0) {
+          resultHtml += `
+            <div class="mt-4">
+              <h3 class="font-semibold text-red-600 mb-2">실패한 위치:</h3>
+              <ul class="list-disc list-inside text-sm text-gray-700 space-y-1">
+                ${result.errors.map(e => `<li>${e.code}: ${e.error}</li>`).join('')}
+              </ul>
+            </div>
+          `;
+        }
+        
+        resultHtml += '</div>';
+        resultContent.innerHTML = resultHtml;
+        resultArea.classList.remove('hidden');
+        progressArea.classList.add('hidden');
+        progressBar.style.width = '100%';
+        progressText.textContent = '완료!';
+        
+      } catch (error) {
+        console.error('마이그레이션 오류:', error);
+        alert('마이그레이션 중 오류가 발생했습니다: ' + error.message);
+        progressArea.classList.add('hidden');
+      } finally {
+        migrateBtn.disabled = false;
+        migrateBtn.textContent = '위치 데이터 마이그레이션 시작';
+      }
+    }
+  </script>
+  <script src="js/migrate_locations.js"></script>
+</body>
+</html>

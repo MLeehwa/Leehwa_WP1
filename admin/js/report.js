@@ -372,6 +372,7 @@ export async function loadReport() {
       });
       // 데이터 행에도 모든 셀에 테두리 추가
       const dataRow = ws1.getRow(ws1.rowCount);
+      const isTargetContainer = row.container_no === 'TRHU7878105';
       dataRow.eachCell((cell, colNumber) => {
         cell.border = {
           top: { style: 'thin', color: { argb: 'FF000000' } },
@@ -386,7 +387,17 @@ export async function loadReport() {
           cell.alignment = { vertical: 'middle', horizontal: 'center' };
         }
       });
-      if (idx % 2 === 1) {
+      // Container No가 TRHU7878105인 경우 빨간색 음영 적용
+      if (isTargetContainer) {
+        dataRow.eachCell((cell) => {
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFFF0000' } // 빨간색
+          };
+        });
+      } else if (idx % 2 === 1) {
+        // 기존 로직: 짝수 행에 회색 음영
         dataRow.eachCell((cell) => {
           cell.fill = {
             type: 'pattern',

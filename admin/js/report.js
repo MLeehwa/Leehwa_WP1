@@ -207,15 +207,20 @@ export async function loadReport() {
     // normalize 함수 추가
     const normalize = v => (v === undefined || v === null) ? '' : String(v).trim().toLowerCase();
 
-    // 0. flagged_containers 테이블에서 문제 컨테이너 번호 조회
+    // 0. flagged_containers 테이블에서 문제 컨테이너 번호 및 사유 조회
     const { data: flaggedContainers, error: flaggedError } = await supabase
       .from('flagged_containers')
-      .select('container_no');
+      .select('container_no, reason');
     const flaggedContainerSet = new Set();
+    const flaggedContainerReasonMap = new Map();
     if (!flaggedError && flaggedContainers) {
       flaggedContainers.forEach(fc => {
         if (fc.container_no) {
-          flaggedContainerSet.add(normalize(fc.container_no));
+          const normalizedNo = normalize(fc.container_no);
+          flaggedContainerSet.add(normalizedNo);
+          if (fc.reason) {
+            flaggedContainerReasonMap.set(normalizedNo, fc.reason);
+          }
         }
       });
     }
@@ -235,7 +240,7 @@ export async function loadReport() {
       properties: { tabColor: { argb: 'FF4472C4' } }
     });
 
-    // 시트1 헤더 및 컬럼 정의 (REMARKS 컬럼 제거)
+    // 시트1 헤더 및 컬럼 정의
     ws1.columns = [
       { header: 'NO.', key: 'no', width: 6 },
       { header: 'CONTAINER NO.', key: 'container', width: 20 },
@@ -246,7 +251,8 @@ export async function loadReport() {
       { header: 'LOCATION', key: 'location', width: 10 },
       { header: 'DURATION', key: 'duration', width: 10 },
       { header: 'QTY', key: 'qty', width: 8 },
-      { header: 'STATUS', key: 'status', width: 12 }
+      { header: 'STATUS', key: 'status', width: 12 },
+      { header: 'REMARK', key: 'remark', width: 30 }
     ];
 
     // 시트1 헤더 스타일
@@ -371,6 +377,13 @@ export async function loadReport() {
         if (dateStr === '-') return '-';
         return dateStr.replace(/-/g, '/');
       };
+      // flagged_containers에 등록된 컨테이너 번호인지 확인 및 사유 가져오기
+      const normalizedContainerNo = row.container_no ? normalize(row.container_no) : '';
+      const isFlaggedContainer = normalizedContainerNo && flaggedContainerSet.has(normalizedContainerNo);
+      const remark = isFlaggedContainer && flaggedContainerReasonMap.has(normalizedContainerNo) 
+        ? flaggedContainerReasonMap.get(normalizedContainerNo) 
+        : '';
+      
       ws1.addRow({
         no: idx + 1,
         container: row.container_no,
@@ -381,12 +394,11 @@ export async function loadReport() {
         location: row.location_code || '',
         duration: duration,
         qty: Number(row.quantity),
-        status: row.status
+        status: row.status,
+        remark: remark
       });
       // 데이터 행에도 모든 셀에 테두리 추가
       const dataRow = ws1.getRow(ws1.rowCount);
-      // flagged_containers에 등록된 컨테이너 번호인지 확인
-      const isFlaggedContainer = row.container_no && flaggedContainerSet.has(normalize(row.container_no));
       dataRow.eachCell((cell, colNumber) => {
         cell.border = {
           top: { style: 'thin', color: { argb: 'FF000000' } },
@@ -397,6 +409,8 @@ export async function loadReport() {
         if (colNumber === 9) { // QTY 컬럼
           cell.alignment = { vertical: 'middle', horizontal: 'right' };
           cell.numFmt = '#,##0';
+        } else if (colNumber === 11) { // REMARK 컬럼
+          cell.alignment = { vertical: 'middle', horizontal: 'left' };
         } else {
           cell.alignment = { vertical: 'middle', horizontal: 'center' };
         }

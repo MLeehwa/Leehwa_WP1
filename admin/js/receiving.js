@@ -1991,10 +1991,13 @@ async function showLocationMapModal() {
           </div>
         </div>
         <div class="p-4 border-t bg-gray-50">
+          <div class="mb-2 text-sm text-blue-600 font-semibold">
+            💡 초록색으로 표시된 빈 위치를 클릭하면 자동으로 선택됩니다
+          </div>
           <div class="flex gap-4 text-sm">
             <div class="flex items-center gap-2">
               <div class="w-4 h-4 bg-green-200 border border-green-400"></div>
-              <span>빈 위치 (사용 가능)</span>
+              <span>빈 위치 (사용 가능) - 클릭 가능</span>
             </div>
             <div class="flex items-center gap-2">
               <div class="w-4 h-4 bg-red-200 border border-red-400"></div>
@@ -2124,6 +2127,9 @@ async function showLocationMapModal() {
       const isOccupied = occupiedLocations.has(normalizedCode);
       const isAvailable = loc.status === 'available' && !isOccupied;
       
+      // 위치 박스를 그룹으로 묶어서 클릭 이벤트 추가
+      const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      
       // 위치 박스
       const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
       rect.setAttribute('x', loc.x);
@@ -2132,26 +2138,53 @@ async function showLocationMapModal() {
       rect.setAttribute('height', loc.height);
       
       if (isAvailable) {
-        // 빈 위치 - 하이라이트 (초록색)
+        // 빈 위치 - 하이라이트 (초록색), 클릭 가능
         rect.setAttribute('fill', '#90EE90');
         rect.setAttribute('fill-opacity', '0.7');
         rect.setAttribute('stroke', '#228B22');
         rect.setAttribute('stroke-width', '2');
+        rect.style.cursor = 'pointer';
+        
+        // 클릭 이벤트: 위치 선택
+        group.addEventListener('click', (e) => {
+          e.stopPropagation();
+          console.log('위치 클릭됨:', normalizedCode);
+          selectLocationFromMap(normalizedCode);
+        });
+        
+        // rect에도 직접 클릭 이벤트 추가 (그룹 이벤트가 작동하지 않을 경우 대비)
+        rect.addEventListener('click', (e) => {
+          e.stopPropagation();
+          console.log('rect 클릭됨:', normalizedCode);
+          selectLocationFromMap(normalizedCode);
+        });
+        
+        // 호버 효과
+        group.addEventListener('mouseenter', () => {
+          rect.setAttribute('fill-opacity', '0.9');
+          rect.setAttribute('stroke-width', '3');
+        });
+        group.addEventListener('mouseleave', () => {
+          rect.setAttribute('fill-opacity', '0.7');
+          rect.setAttribute('stroke-width', '2');
+        });
       } else if (isOccupied) {
         // 사용 중 (빨간색)
         rect.setAttribute('fill', '#FFB6C1');
         rect.setAttribute('fill-opacity', '0.7');
         rect.setAttribute('stroke', '#DC143C');
         rect.setAttribute('stroke-width', '2');
+        rect.style.cursor = 'not-allowed';
       } else {
         // 사용 불가/점검 중 (회색)
         rect.setAttribute('fill', '#D3D3D3');
         rect.setAttribute('fill-opacity', '0.5');
         rect.setAttribute('stroke', '#808080');
         rect.setAttribute('stroke-width', '1');
+        rect.style.cursor = 'not-allowed';
       }
       
-      svg.appendChild(rect);
+      group.appendChild(rect);
       
       // 위치 코드 텍스트
       const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -2161,8 +2194,11 @@ async function showLocationMapModal() {
       text.setAttribute('fill', '#000');
       text.setAttribute('text-anchor', 'middle');
       text.setAttribute('dominant-baseline', 'middle');
+      text.setAttribute('pointer-events', 'none'); // 텍스트 클릭 방지
       text.textContent = normalizedCode;
-      svg.appendChild(text);
+      group.appendChild(text);
+      
+      svg.appendChild(group);
     });
     
     contentDiv.innerHTML = '';
@@ -2211,6 +2247,49 @@ async function showLocationMapModal() {
   } catch (error) {
     console.error('위치 현황 로드 실패:', error);
     contentDiv.innerHTML = `<div class="text-red-600">데이터 로드 실패: ${error.message}</div>`;
+  }
+}
+
+// 위치 맵에서 위치 선택 시 폼에 적용
+function selectLocationFromMap(locationCode) {
+  console.log('위치 선택됨:', locationCode);
+  
+  const locationSelect = document.getElementById('locationSelect');
+  const locationInput = document.getElementById('locationInput');
+  const hideAvailableLocationsBtn = document.getElementById('hideAvailableLocationsBtn');
+  const showAvailableLocationsBtn = document.getElementById('showAvailableLocationsBtn');
+  
+  // 드롭다운 모드인지 수동 입력 모드인지 확인
+  if (locationSelect && !locationSelect.classList.contains('hidden')) {
+    // 드롭다운 모드: 드롭다운에 값 설정
+    locationSelect.value = locationCode;
+    // 입력란에도 값 설정 (참고용)
+    if (locationInput) {
+      locationInput.value = locationCode;
+    }
+    console.log('드롭다운에 위치 설정:', locationCode);
+  } else if (locationInput && !locationInput.classList.contains('hidden')) {
+    // 수동 입력 모드: 입력란에 값 설정
+    locationInput.value = locationCode;
+    console.log('입력란에 위치 설정:', locationCode);
+  } else {
+    // 둘 다 숨겨져 있으면 드롭다운 모드로 전환하고 값 설정
+    if (locationSelect && locationInput) {
+      locationSelect.classList.remove('hidden');
+      locationInput.classList.add('hidden');
+      if (showAvailableLocationsBtn) showAvailableLocationsBtn.classList.add('hidden');
+      if (hideAvailableLocationsBtn) hideAvailableLocationsBtn.classList.remove('hidden');
+      locationSelect.value = locationCode;
+      locationInput.value = locationCode;
+      console.log('드롭다운 모드로 전환하고 위치 설정:', locationCode);
+    }
+  }
+  
+  // 모달 닫기
+  const modal = document.getElementById('locationMapModal');
+  if (modal) {
+    modal.remove();
+    console.log('모달 닫힘');
   }
 }
 

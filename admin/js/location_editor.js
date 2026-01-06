@@ -1067,9 +1067,9 @@ function setupEventListeners() {
         alert('텍스트 내용을 입력하세요.');
         return;
       }
-      x = parseInt(document.getElementById('textX').value) || 200;
-      y = parseInt(document.getElementById('textY').value) || 200;
-      fontSize = parseInt(document.getElementById('textFontSize').value) || 15;
+      x = Math.round(parseFloat(document.getElementById('textX').value) || 200);
+      y = Math.round(parseFloat(document.getElementById('textY').value) || 200);
+      fontSize = Math.round(parseFloat(document.getElementById('textFontSize').value) || 15);
       fill = document.getElementById('textColor').value || '#000000';
     } else {
       if (!label) {
@@ -1121,14 +1121,14 @@ function setupEventListeners() {
     if (!selectedBackground) return;
     
     const label = document.getElementById('editBackgroundLabel').value.trim();
-    const x = parseInt(document.getElementById('editBgX').value);
-    const y = parseInt(document.getElementById('editBgY').value);
-    const width = parseInt(document.getElementById('editBgWidth').value);
-    const height = parseInt(document.getElementById('editBgHeight').value);
+    const x = Math.round(parseFloat(document.getElementById('editBgX').value) || 0);
+    const y = Math.round(parseFloat(document.getElementById('editBgY').value) || 0);
+    const width = Math.round(parseFloat(document.getElementById('editBgWidth').value) || 100);
+    const height = Math.round(parseFloat(document.getElementById('editBgHeight').value) || 50);
     const fill = document.getElementById('editBgFill').value;
     const stroke = document.getElementById('editBgStroke').value;
     const textColor = document.getElementById('editBgTextColor').value;
-    const fontSize = parseInt(document.getElementById('editBgFontSize').value);
+    const fontSize = Math.round(parseFloat(document.getElementById('editBgFontSize').value) || 15);
     
     selectedBackground.label = label;
     selectedBackground.x = x;
@@ -1482,13 +1482,15 @@ function startDrawing(e) {
   
   // 마우스 위치를 캔버스 내부 좌표로 변환
   const mouseCanvasPos = screenToCanvas(e.clientX, e.clientY);
-  drawStartPos.x = mouseCanvasPos.x;
-  drawStartPos.y = mouseCanvasPos.y;
   
   // 그리드 스냅
   if (snapToGridEnabled) {
-    drawStartPos.x = Math.round(drawStartPos.x / gridSize) * gridSize;
-    drawStartPos.y = Math.round(drawStartPos.y / gridSize) * gridSize;
+    drawStartPos.x = Math.round(mouseCanvasPos.x / gridSize) * gridSize;
+    drawStartPos.y = Math.round(mouseCanvasPos.y / gridSize) * gridSize;
+  } else {
+    // 그리드 스냅이 꺼져있어도 정수로 반올림
+    drawStartPos.x = Math.round(mouseCanvasPos.x);
+    drawStartPos.y = Math.round(mouseCanvasPos.y);
   }
   
   // 미리보기 요소 생성
@@ -1838,7 +1840,17 @@ function loadBackgroundElements() {
 // 배경 요소 저장 (localStorage에)
 function saveBackgroundElements() {
   try {
-    localStorage.setItem('wp1_background_elements', JSON.stringify(backgroundElements));
+    // 저장 전에 모든 좌표와 크기를 정수로 반올림
+    const normalizedElements = backgroundElements.map(bg => ({
+      ...bg,
+      x: Math.round(bg.x || 0),
+      y: Math.round(bg.y || 0),
+      width: Math.round(bg.width || (bg.type === 'text' ? 100 : 200)),
+      height: Math.round(bg.height || (bg.type === 'text' ? 20 : 100))
+    }));
+    localStorage.setItem('wp1_background_elements', JSON.stringify(normalizedElements));
+    // backgroundElements 배열도 업데이트
+    backgroundElements = normalizedElements;
   } catch (error) {
     console.error('배경 요소 저장 실패:', error);
   }
@@ -1871,8 +1883,9 @@ function createBackgroundElement(bg) {
   const element = document.createElement('div');
   element.className = `background-element ${bg.type}-element`;
   element.dataset.id = bg.id;
-  element.style.left = bg.x + 'px';
-  element.style.top = bg.y + 'px';
+  // 좌표를 정수로 반올림하여 표시
+  element.style.left = Math.round(bg.x || 0) + 'px';
+  element.style.top = Math.round(bg.y || 0) + 'px';
   
   if (bg.type === 'rect') {
     element.style.width = bg.width + 'px';
@@ -2004,18 +2017,20 @@ function handleDragBackground(e) {
     y = Math.min(y, canvas.offsetHeight - selectedBackground.height);
   }
   
-  // 위치 업데이트
-  selectedBackground.x = x;
-  selectedBackground.y = y;
+  // 위치 업데이트 (정수로 반올림하여 저장)
+  const roundedX = Math.round(x);
+  const roundedY = Math.round(y);
+  selectedBackground.x = roundedX;
+  selectedBackground.y = roundedY;
   
   const element = document.querySelector(`.background-element[data-id="${selectedBackground.id}"]`);
   if (element) {
-    element.style.left = x + 'px';
-    element.style.top = y + 'px';
+    element.style.left = roundedX + 'px';
+    element.style.top = roundedY + 'px';
     
     // 정보 패널 업데이트
-    document.getElementById('editBgX').value = x;
-    document.getElementById('editBgY').value = y;
+    document.getElementById('editBgX').value = roundedX;
+    document.getElementById('editBgY').value = roundedY;
   }
 }
 
@@ -2071,16 +2086,18 @@ function startResizeBackground(bg, element, e) {
     newWidth = Math.min(newWidth, maxWidth);
     newHeight = Math.min(newHeight, maxHeight);
     
-    // 크기 업데이트
-    selectedBackground.width = newWidth;
-    selectedBackground.height = newHeight;
+    // 크기 업데이트 (정수로 반올림하여 저장)
+    const roundedWidth = Math.round(newWidth);
+    const roundedHeight = Math.round(newHeight);
+    selectedBackground.width = roundedWidth;
+    selectedBackground.height = roundedHeight;
     
-    element.style.width = newWidth + 'px';
-    element.style.height = newHeight + 'px';
+    element.style.width = roundedWidth + 'px';
+    element.style.height = roundedHeight + 'px';
     
     // 정보 패널 업데이트
-    document.getElementById('editBgWidth').value = newWidth;
-    document.getElementById('editBgHeight').value = newHeight;
+    document.getElementById('editBgWidth').value = roundedWidth;
+    document.getElementById('editBgHeight').value = roundedHeight;
   }
   
   function stopResize() {

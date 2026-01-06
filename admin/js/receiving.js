@@ -649,7 +649,7 @@ async function loadPlans(applyFilter = false) {
       if (allPlans.length === 0) {
         planListBody.innerHTML = `
           <tr>
-            <td colspan="12" class="text-center py-4 text-muted">
+            <td colspan="13" class="text-center py-4 text-muted">
               <i class="fas fa-info-circle me-2"></i>
               데이터가 없습니다. 테스트 데이터를 생성해보세요.
             </td>
@@ -669,7 +669,7 @@ async function loadPlans(applyFilter = false) {
       console.error('최근 데이터 로드 실패:', error);
       planListBody.innerHTML = `
         <tr>
-          <td colspan="12" class="text-center py-4 text-muted">
+          <td colspan="13" class="text-center py-4 text-muted">
             <i class="fas fa-search me-2"></i>
             ${formatMessage('msg_click_search')}
           </td>
@@ -682,7 +682,7 @@ async function loadPlans(applyFilter = false) {
   try {
     planListBody.innerHTML = `
       <tr>
-        <td colspan="12" class="text-center py-4">
+        <td colspan="13" class="text-center py-4">
           <div class="spinner-border text-primary" role="status">
             <span class="visually-hidden">Loading...</span>
           </div>
@@ -720,7 +720,7 @@ async function loadPlans(applyFilter = false) {
     if (!plans || plans.length === 0) {
       planListBody.innerHTML = `
         <tr>
-          <td colspan="12" class="text-center py-4 text-muted">
+          <td colspan="13" class="text-center py-4 text-muted">
             <i class="fas fa-info-circle me-2"></i>
             ${formatMessage('msg_no_plans')}
           </td>
@@ -751,7 +751,7 @@ async function loadPlans(applyFilter = false) {
     console.error('Error:', error);
     planListBody.innerHTML = `
       <tr>
-        <td colspan="12" class="text-center py-4 text-danger">
+        <td colspan="13" class="text-center py-4 text-danger">
           <i class="fas fa-exclamation-circle me-2"></i>
           ${formatMessage('msg_error_loading')}
         </td>
@@ -785,6 +785,19 @@ function bindEventListeners() {
         e.preventDefault();
         e.stopPropagation();
         handleDelete(e);
+        return false;
+      }
+      
+      // 수정 버튼 클릭 처리
+      const editBtn = e.target.closest(".edit-plan-btn");
+      if (editBtn) {
+        console.log('Edit plan button clicked', editBtn);
+        e.preventDefault();
+        e.stopPropagation();
+        const planId = editBtn.dataset.planId;
+        if (planId) {
+          editPlan(parseInt(planId));
+        }
         return false;
       }
       
@@ -1087,8 +1100,72 @@ export async function initSection() {
     addNewPlanBtn.addEventListener('click', async () => {
       console.log('Add New Plan button clicked');
       if (addPlanForm) {
+        // 수정 모드 초기화
+        editingPlanId = null;
+        
+        // 폼 완전히 초기화
+        document.getElementById('typeSelect').value = 'container';
+        document.getElementById('containerInput').value = '';
+        document.getElementById('containerInput').disabled = false;
+        document.getElementById('containerInput').placeholder = 'e.g., C123456';
+        document.getElementById('receiveDateInput').value = '';
+        
+        // 위치 필드 초기화
+        const locationSelect = document.getElementById('locationSelect');
+        const locationInput = document.getElementById('locationInput');
+        const showAvailableLocationsBtn = document.getElementById('showAvailableLocationsBtn');
+        const hideAvailableLocationsBtn = document.getElementById('hideAvailableLocationsBtn');
+        
+        if (locationSelect && locationInput) {
+          locationSelect.value = '';
+          locationInput.value = '';
+          locationSelect.classList.remove('hidden');
+          locationInput.classList.add('hidden');
+          if (showAvailableLocationsBtn) showAvailableLocationsBtn.classList.add('hidden');
+          if (hideAvailableLocationsBtn) hideAvailableLocationsBtn.classList.remove('hidden');
+        }
+        
+        // 입고처 필드 초기화
+        const receivingPlaceSelect = document.getElementById('receivingPlaceSelect');
+        const receivingPlaceInput = document.getElementById('receivingPlaceInput');
+        if (receivingPlaceSelect) {
+          receivingPlaceSelect.value = '';
+          receivingPlaceSelect.classList.remove('hidden');
+        }
+        if (receivingPlaceInput) {
+          receivingPlaceInput.value = '';
+          receivingPlaceInput.classList.add('hidden');
+        }
+        
+        // 토글 버튼 초기화
+        const showReceivingPlaceBtn = document.getElementById('showReceivingPlaceInputBtn');
+        const hideReceivingPlaceBtn = document.getElementById('hideReceivingPlaceInputBtn');
+        if (showReceivingPlaceBtn) showReceivingPlaceBtn.classList.remove('hidden');
+        if (hideReceivingPlaceBtn) hideReceivingPlaceBtn.classList.add('hidden');
+        
+        // 품목 목록 초기화
+        document.getElementById('itemList').innerHTML = '';
+        
+        // 자동 위치 체크박스 초기화
+        const autoLocationCheckbox = document.getElementById('autoLocationCheckbox');
+        if (autoLocationCheckbox) {
+          autoLocationCheckbox.checked = false;
+        }
+        const autoLocationInfo = document.getElementById('autoLocationInfo');
+        if (autoLocationInfo) {
+          autoLocationInfo.textContent = '';
+        }
+        
+        // 폼 표시
         addPlanForm.classList.remove('hidden');
         renderPlanFormButton();
+        
+        // 폼 제목 복원
+        const formTitle = document.querySelector('#addPlanForm h2');
+        if (formTitle) {
+          formTitle.textContent = formatMessage('title_add_new_receiving_plan') || 'Add New Receiving Plan';
+        }
+        
         // 폼이 열릴 때 드롭다운 이벤트 리스너 다시 설정 및 드롭다운 로드
         setTimeout(async () => {
           setupLocationDropdownToggle();
@@ -1490,6 +1567,196 @@ if (containerNoInput && partNoInput && quantityInput && locationInput) {
   });
 }
 
+// 수정 중인 plan ID 저장
+let editingPlanId = null;
+
+// 입고 계획 수정 함수
+async function editPlan(planId) {
+  try {
+    // Plan과 Items 조회
+    const { data: plan, error: planError } = await window.supabase
+      .from('receiving_plan')
+      .select(`
+        *,
+        receiving_items (*)
+      `)
+      .eq('id', planId)
+      .single();
+    
+    if (planError) throw planError;
+    
+    if (!plan) {
+      showMessage(
+        formatMessage('modal_message_title'),
+        '입고 계획을 찾을 수 없습니다.'
+      );
+      return;
+    }
+    
+    // 입고 완료 여부 확인
+    const { data: logs } = await window.supabase
+      .from('receiving_log')
+      .select('label_id');
+    
+    const receivedLabelIds = new Set((logs || []).map(l => String(l.label_id)));
+    const items = plan.receiving_items || [];
+    const allReceived = items.length > 0 && items.every(i => receivedLabelIds.has(String(i.label_id)));
+    
+    if (allReceived) {
+      showMessage(
+        formatMessage('modal_message_title'),
+        '입고 완료된 계획은 수정할 수 없습니다.'
+      );
+      return;
+    }
+    
+    // 수정 모드로 설정
+    editingPlanId = planId;
+    
+    // 폼에 데이터 로드
+    document.getElementById('typeSelect').value = plan.type || 'container';
+    document.getElementById('containerInput').value = plan.container_no || '';
+    document.getElementById('receiveDateInput').value = plan.receive_date || '';
+    
+    // 컨테이너 타입에 따라 입력 필드 활성화/비활성화
+    if (plan.type === 'trailer') {
+      document.getElementById('containerInput').disabled = true;
+      document.getElementById('containerInput').placeholder = '자동생성';
+    } else {
+      document.getElementById('containerInput').disabled = false;
+      document.getElementById('containerInput').placeholder = 'e.g., C123456';
+    }
+    
+    // 위치 설정 (첫 번째 item의 location_code 사용)
+    if (items.length > 0 && items[0].location_code) {
+      const locationCode = items[0].location_code;
+      // 드롭다운 모드로 전환
+      const locationSelect = document.getElementById('locationSelect');
+      const locationInput = document.getElementById('locationInput');
+      const showAvailableLocationsBtn = document.getElementById('showAvailableLocationsBtn');
+      const hideAvailableLocationsBtn = document.getElementById('hideAvailableLocationsBtn');
+      
+      if (locationSelect && locationInput) {
+        locationSelect.classList.remove('hidden');
+        locationInput.classList.add('hidden');
+        if (showAvailableLocationsBtn) showAvailableLocationsBtn.classList.add('hidden');
+        if (hideAvailableLocationsBtn) hideAvailableLocationsBtn.classList.remove('hidden');
+        
+        // 드롭다운에 값 설정 (없으면 수동 입력 모드로)
+        await loadAvailableLocationsDropdown();
+        if (locationSelect.querySelector(`option[value="${locationCode}"]`)) {
+          locationSelect.value = locationCode;
+        } else {
+          // 드롭다운에 없으면 수동 입력 모드로 전환
+          locationSelect.classList.add('hidden');
+          locationInput.classList.remove('hidden');
+          if (showAvailableLocationsBtn) showAvailableLocationsBtn.classList.remove('hidden');
+          if (hideAvailableLocationsBtn) hideAvailableLocationsBtn.classList.add('hidden');
+          locationInput.value = locationCode;
+        }
+      }
+    }
+    
+    // 입고처 설정 (첫 번째 item의 receiving_place 사용)
+    if (items.length > 0 && items[0].receiving_place) {
+      const receivingPlace = items[0].receiving_place;
+      const receivingPlaceSelect = document.getElementById('receivingPlaceSelect');
+      const receivingPlaceInput = document.getElementById('receivingPlaceInput');
+      
+      // PTA 또는 PORT인지 확인
+      if (receivingPlace === 'PTA' || receivingPlace === 'PORT') {
+        if (receivingPlaceSelect) {
+          receivingPlaceSelect.value = receivingPlace;
+          receivingPlaceSelect.classList.remove('hidden');
+          if (receivingPlaceInput) receivingPlaceInput.classList.add('hidden');
+        }
+        const showReceivingPlaceBtn = document.getElementById('showReceivingPlaceInputBtn');
+        const hideReceivingPlaceBtn = document.getElementById('hideReceivingPlaceInputBtn');
+        if (showReceivingPlaceBtn) showReceivingPlaceBtn.classList.remove('hidden');
+        if (hideReceivingPlaceBtn) hideReceivingPlaceBtn.classList.add('hidden');
+      } else {
+        // 직접 입력 값인 경우
+        if (receivingPlaceInput) {
+          receivingPlaceInput.value = receivingPlace;
+          receivingPlaceInput.classList.remove('hidden');
+          if (receivingPlaceSelect) receivingPlaceSelect.classList.add('hidden');
+        }
+        const showReceivingPlaceBtn = document.getElementById('showReceivingPlaceInputBtn');
+        const hideReceivingPlaceBtn = document.getElementById('hideReceivingPlaceInputBtn');
+        if (showReceivingPlaceBtn) showReceivingPlaceBtn.classList.add('hidden');
+        if (hideReceivingPlaceBtn) hideReceivingPlaceBtn.classList.remove('hidden');
+      }
+    }
+    
+    // 품목 목록 설정
+    const itemList = document.getElementById('itemList');
+    itemList.innerHTML = '';
+    items.forEach(item => {
+      const itemDiv = document.createElement('div');
+      itemDiv.className = 'grid grid-cols-2 gap-4';
+      itemDiv.innerHTML = `
+        <input type="text" placeholder="Part No." class="part-input border rounded px-3 py-2" value="${item.part_no || ''}" />
+        <input type="number" placeholder="Quantity" class="qty-input border rounded px-3 py-2" value="${item.quantity || ''}" />
+      `;
+      itemList.appendChild(itemDiv);
+    });
+    
+    // 폼 표시
+    document.getElementById('addPlanForm').classList.remove('hidden');
+    renderPlanFormButton();
+    
+    // 폼 제목 변경
+    const formTitle = document.querySelector('#addPlanForm h2');
+    if (formTitle) {
+      formTitle.textContent = '입고 계획 수정';
+    }
+    
+    // 폼이 열릴 때 드롭다운 이벤트 리스너 다시 설정
+    setTimeout(async () => {
+      setupLocationDropdownToggle();
+      attachAutoLocationCheckboxListener();
+      setupReceivingPlaceToggle();
+      // 드롭다운이 기본이므로 초기 로드
+      await loadAvailableLocationsDropdown();
+    }, 100);
+    
+  } catch (error) {
+    console.error('입고 계획 수정 실패:', error);
+    showMessage(
+      formatMessage('modal_message_title'),
+      '입고 계획을 불러오는 중 오류가 발생했습니다: ' + error.message
+    );
+  }
+}
+
+// 수정 취소 함수
+function cancelEditPlan() {
+  editingPlanId = null;
+  document.getElementById('addPlanForm').classList.add('hidden');
+  document.getElementById('itemList').innerHTML = '';
+  document.getElementById('containerInput').value = '';
+  document.getElementById('locationInput').value = '';
+  document.getElementById('receiveDateInput').value = '';
+  
+  // 입고처 필드 초기화
+  const receivingPlaceSelect = document.getElementById('receivingPlaceSelect');
+  const receivingPlaceInput = document.getElementById('receivingPlaceInput');
+  if (receivingPlaceSelect) {
+    receivingPlaceSelect.value = '';
+    receivingPlaceSelect.classList.remove('hidden');
+  }
+  if (receivingPlaceInput) {
+    receivingPlaceInput.value = '';
+    receivingPlaceInput.classList.add('hidden');
+  }
+  
+  // 폼 제목 복원
+  const formTitle = document.querySelector('#addPlanForm h2');
+  if (formTitle) {
+    formTitle.textContent = formatMessage('title_add_new_receiving_plan') || 'Add New Receiving Plan';
+  }
+}
+
 // 폼 하단 버튼 동적 생성 함수
 function renderPlanFormButton() {
   let btnArea = document.getElementById('planFormBtnArea');
@@ -1503,13 +1770,24 @@ function renderPlanFormButton() {
   btnArea.innerHTML = '';
   
   const submitBtn = document.createElement('button');
-  submitBtn.className = 'bg-green-600 text-white px-6 py-2 rounded';
-  submitBtn.textContent = 'Submit Plan';
+  submitBtn.className = editingPlanId ? 'bg-blue-600 text-white px-6 py-2 rounded' : 'bg-green-600 text-white px-6 py-2 rounded';
+  submitBtn.textContent = editingPlanId ? '수정 완료' : 'Submit Plan';
   submitBtn.addEventListener('click', () => {
     console.log('Submit Plan clicked');
     handleSubmitPlan();
   });
   btnArea.appendChild(submitBtn);
+  
+  // 수정 모드인 경우 취소 버튼 추가
+  if (editingPlanId) {
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'bg-gray-500 text-white px-6 py-2 rounded ml-2';
+    cancelBtn.textContent = '취소';
+    cancelBtn.addEventListener('click', () => {
+      cancelEditPlan();
+    });
+    btnArea.appendChild(cancelBtn);
+  }
 }
 
 // handleSubmitPlan을 window에 등록
@@ -1517,6 +1795,64 @@ window.handleSubmitPlan = handleSubmitPlan;
 
 // 신규 등록 핸들러
 async function handleSubmitPlan() {
+  // 필수 필드 검증
+  const receiveDate = document.getElementById("receiveDateInput").value;
+  const receivingPlaceSelect = document.getElementById("receivingPlaceSelect");
+  const receivingPlaceInput = document.getElementById("receivingPlaceInput");
+  const parts = Array.from(document.querySelectorAll(".part-input")).map(el => el.value.trim());
+  const qtys = Array.from(document.querySelectorAll(".qty-input")).map(el => parseInt(el.value));
+  
+  // 1. 날짜 검증
+  if (!receiveDate || receiveDate.trim() === '') {
+    showMessage(
+      formatMessage('modal_message_title'),
+      '예정 입고일을 입력해주세요.'
+    );
+    return;
+  }
+  
+  // 2. 입고처 검증
+  let receivingPlace = '';
+  if (receivingPlaceSelect && !receivingPlaceSelect.classList.contains('hidden') && receivingPlaceSelect.value) {
+    receivingPlace = receivingPlaceSelect.value.trim();
+  } else if (receivingPlaceInput && !receivingPlaceInput.classList.contains('hidden')) {
+    receivingPlace = receivingPlaceInput.value.trim();
+  }
+  
+  if (!receivingPlace || receivingPlace.trim() === '') {
+    showMessage(
+      formatMessage('modal_message_title'),
+      '입고처를 선택하거나 입력해주세요.'
+    );
+    return;
+  }
+  
+  // 3. 입고 품목 검증
+  if (parts.length === 0 || qtys.length === 0) {
+    showMessage(
+      formatMessage('modal_message_title'),
+      '최소 1개 이상의 입고 품목을 추가해주세요.'
+    );
+    return;
+  }
+  
+  if (parts.some(p => !p || p.trim() === '')) {
+    showMessage(
+      formatMessage('modal_message_title'),
+      '모든 품목의 Part No.를 입력해주세요.'
+    );
+    return;
+  }
+  
+  if (qtys.some(q => !q || isNaN(q) || q <= 0)) {
+    showMessage(
+      formatMessage('modal_message_title'),
+      '모든 품목의 수량을 올바르게 입력해주세요. (1 이상의 숫자)'
+    );
+    return;
+  }
+  
+  // 필수 필드 검증 통과 후 나머지 로직 진행
   const type = document.getElementById("typeSelect").value;
   let container = document.getElementById("containerInput").value.trim();
   const locationSelect = document.getElementById("locationSelect");
@@ -1554,30 +1890,93 @@ async function handleSubmitPlan() {
       }
     }
   }
-  // 입고처 값 가져오기 (드롭다운 또는 직접 입력)
-  const receivingPlaceSelect = document.getElementById("receivingPlaceSelect");
-  const receivingPlaceInput = document.getElementById("receivingPlaceInput");
-  let receivingPlace = '';
-  
-  if (receivingPlaceSelect && !receivingPlaceSelect.classList.contains('hidden') && receivingPlaceSelect.value) {
-    receivingPlace = receivingPlaceSelect.value.trim();
-  } else if (receivingPlaceInput && !receivingPlaceInput.classList.contains('hidden')) {
-    receivingPlace = receivingPlaceInput.value.trim();
-  }
-  
-  const receiveDate = document.getElementById("receiveDateInput").value;
-  const parts = Array.from(document.querySelectorAll(".part-input")).map(el => el.value.trim());
-  const qtys = Array.from(document.querySelectorAll(".qty-input")).map(el => parseInt(el.value));
-
-  if (parts.length === 0 || qtys.length === 0 || parts.some(p => !p) || qtys.some(q => !q || isNaN(q))) {
-    showMessage(
-      formatMessage('modal_message_title'),
-      formatMessage('msg_enter_parts_qty')
-    );
-    return;
-  }
 
   try {
+    // 수정 모드인 경우 기존 plan 업데이트
+    if (editingPlanId) {
+      // 기존 items 삭제
+      await window.supabase
+        .from('receiving_items')
+        .delete()
+        .eq('plan_id', editingPlanId);
+      
+      // Plan 업데이트
+      const updateData = {
+        type,
+        receive_date: receiveDate
+      };
+      
+      if (type === 'container') {
+        updateData.container_no = container;
+      }
+      
+      const { error: updateError } = await window.supabase
+        .from('receiving_plan')
+        .update(updateData)
+        .eq('id', editingPlanId);
+      
+      if (updateError) throw updateError;
+      
+      // 기존 plan의 container_no 가져오기 (trailer인 경우)
+      let containerNo = container;
+      if (type === 'trailer') {
+        const { data: existingPlan } = await window.supabase
+          .from('receiving_plan')
+          .select('container_no, trailer_seq')
+          .eq('id', editingPlanId)
+          .single();
+        if (existingPlan && existingPlan.container_no) {
+          containerNo = existingPlan.container_no;
+        }
+      }
+      
+      // 새 Items 저장
+      const items = [];
+      for (let i = 0; i < parts.length; i++) {
+        items.push({
+          plan_id: editingPlanId,
+          part_no: parts[i],
+          quantity: qtys[i],
+          location_code: location,
+          label_id: crypto.randomUUID(),
+          container_no: containerNo,
+          receiving_place: receivingPlace,
+        });
+      }
+      
+      const { error: itemsError } = await window.supabase.from('receiving_items').insert(items);
+      if (itemsError) throw itemsError;
+      
+      showMessage(
+        formatMessage('modal_message_title'),
+        '수정되었습니다.'
+      );
+      
+      // 수정 모드 초기화
+      editingPlanId = null;
+      document.getElementById('addPlanForm').classList.add('hidden');
+      document.getElementById('itemList').innerHTML = '';
+      document.getElementById('containerInput').value = '';
+      document.getElementById('locationInput').value = '';
+      document.getElementById('receiveDateInput').value = '';
+      
+      // 입고처 필드 초기화
+      const receivingPlaceSelect = document.getElementById('receivingPlaceSelect');
+      const receivingPlaceInput = document.getElementById('receivingPlaceInput');
+      if (receivingPlaceSelect) {
+        receivingPlaceSelect.value = '';
+        receivingPlaceSelect.classList.remove('hidden');
+      }
+      if (receivingPlaceInput) {
+        receivingPlaceInput.value = '';
+        receivingPlaceInput.classList.add('hidden');
+      }
+      
+      await loadPlans(true);
+      return;
+    }
+    
+    // 신규 등록 모드
     let planId;
     if (type === 'trailer') {
       // 1. Plan 저장 (trailer_seq 자동 생성)
@@ -1645,11 +2044,27 @@ async function handleSubmitPlan() {
       formatMessage('modal_message_title'),
       formatMessage('msg_saved')
     );
+    
+    // 수정 모드 초기화
+    editingPlanId = null;
+    
     document.getElementById('addPlanForm').classList.add('hidden');
     document.getElementById('itemList').innerHTML = '';
     document.getElementById('containerInput').value = '';
     document.getElementById('locationInput').value = '';
-    document.getElementById('receivingPlaceInput') && (document.getElementById('receivingPlaceInput').value = '');
+    
+    // 입고처 필드 초기화
+    const receivingPlaceSelect = document.getElementById('receivingPlaceSelect');
+    const receivingPlaceInput = document.getElementById('receivingPlaceInput');
+    if (receivingPlaceSelect) {
+      receivingPlaceSelect.value = '';
+      receivingPlaceSelect.classList.remove('hidden');
+    }
+    if (receivingPlaceInput) {
+      receivingPlaceInput.value = '';
+      receivingPlaceInput.classList.add('hidden');
+    }
+    
     document.getElementById('receiveDateInput').value = '';
     await loadPlans(true);
   } catch (error) {
@@ -1956,15 +2371,27 @@ function setupLocationDropdownToggle() {
   
   console.log('드롭다운 토글 이벤트 리스너 설정 완료');
   
-  // 빈 위치 시각적으로 보기 버튼 이벤트
-  const viewLocationMapBtn = document.getElementById('viewLocationMapBtn');
-  if (viewLocationMapBtn) {
-    const newViewBtn = viewLocationMapBtn.cloneNode(true);
-    viewLocationMapBtn.parentNode.replaceChild(newViewBtn, viewLocationMapBtn);
-    
-    newViewBtn.addEventListener('click', async () => {
-      await showLocationMapModal();
-    });
+  // 빈 위치 시각적으로 보기 버튼 이벤트 (이벤트 위임 사용)
+  // 폼 자체에 이벤트 리스너를 추가하여 항상 작동하도록 함
+  const addPlanForm = document.getElementById('addPlanForm');
+  if (addPlanForm) {
+    // 기존 이벤트 리스너가 중복되지 않도록 한 번만 등록
+    if (!addPlanForm.hasAttribute('data-location-map-listener')) {
+      addPlanForm.setAttribute('data-location-map-listener', 'true');
+      addPlanForm.addEventListener('click', async (e) => {
+        // viewLocationMapBtn 또는 그 자식 요소 클릭 확인
+        const viewLocationMapBtn = e.target.closest('#viewLocationMapBtn');
+        if (viewLocationMapBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          console.log('빈 위치 시각적으로 보기 버튼 클릭됨 (이벤트 위임)');
+          await showLocationMapModal();
+        }
+      });
+      console.log('빈 위치 시각적으로 보기 버튼 이벤트 리스너 설정 완료 (이벤트 위임)');
+    }
+  } else {
+    console.warn('addPlanForm을 찾을 수 없습니다.');
   }
 }
 
@@ -2546,6 +2973,12 @@ async function displayPlans(plans) {
       forceBtn = `<button class="force-receive-btn text-green-600" data-plan-id="${plan.id}" data-label-ids="${notReceivedItems.map(i => i.label_id).join(',')}">입고</button>`;
     }
     
+    // 수정 버튼: 대기 상태인 경우만 표시
+    let editBtn = '';
+    if (!allReceived) {
+      editBtn = `<button class="edit-plan-btn text-blue-600 hover:text-blue-800" data-plan-id="${plan.id}">수정</button>`;
+    }
+    
     // DELETE 버튼: 입고 완료된 경우 비활성화
     const deleteBtnDisabled = allReceived ? 'disabled' : '';
     const deleteBtnClass = allReceived ? 'delete-btn text-gray-400 cursor-not-allowed' : 'delete-btn text-red-600';
@@ -2563,6 +2996,9 @@ async function displayPlans(plans) {
         <td class="px-4 py-2 border">${qtys}</td>
         <td class="px-4 py-2 border">${status}</td>
         <td class="px-4 py-2 border">${receivedAts}</td>
+        <td class="px-2 py-2 border text-center">
+          ${editBtn}
+        </td>
         <td class="px-2 py-2 border">
           <button class="${deleteBtnClass}" data-id="${plan.id}" ${deleteBtnDisabled} title="${deleteBtnTitle}">Delete</button>
         </td>

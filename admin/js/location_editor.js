@@ -41,7 +41,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   
   await loadLocations();
-  loadBackgroundElements();
+  await loadBackgroundElements();
   // 배경 요소를 먼저 렌더링 (DOM 순서상 앞에 위치)
   renderBackgroundElements();
   // 위치 박스를 나중에 렌더링 (z-index로 배경 위에 표시)
@@ -862,12 +862,25 @@ function setupEventListeners() {
   
   // 모든 변경사항 저장
   document.getElementById('saveAllBtn').addEventListener('click', async () => {
-    if (confirm('모든 변경사항을 저장하시겠습니까?')) {
-      await saveAllLocations(true); // 수동 저장이므로 alert 표시
-      // 저장 후 되돌리기 스택 초기화 (저장된 상태가 기준점)
-      undoStack = [];
-      redoStack = [];
-      updateUndoRedoButtons();
+    if (confirm('모든 변경사항을 저장하시겠습니까? (위치 + 배경 요소)')) {
+      try {
+        // 위치 저장
+        await saveAllLocations(false); // 일괄 저장이므로 개별 alert 표시 안 함
+        
+        // 배경 요소 저장
+        await saveBackgroundElements();
+        
+        // 저장 완료 알림
+        alert('모든 변경사항이 저장되었습니다. (위치 + 배경 요소)');
+        
+        // 저장 후 되돌리기 스택 초기화 (저장된 상태가 기준점)
+        undoStack = [];
+        redoStack = [];
+        updateUndoRedoButtons();
+      } catch (error) {
+        console.error('저장 실패:', error);
+        alert('저장 중 오류가 발생했습니다: ' + error.message);
+      }
     }
   });
   
@@ -1122,10 +1135,35 @@ function setupEventListeners() {
     selectedBackground.fill = fill;
     selectedBackground.stroke = stroke;
     
+    // strokeWidth는 기본값 유지 (입력 필드가 없으므로 기존 값 유지)
+    if (selectedBackground.type === 'rect' && !selectedBackground.strokeWidth) {
+      selectedBackground.strokeWidth = 1;
+    }
+    
     if (selectedBackground.type === 'text') {
       selectedBackground.fill = textColor;
       selectedBackground.fontSize = fontSize;
       selectedBackground.text = label || selectedBackground.text;
+    }
+    
+    // backgroundElements 배열에서도 직접 업데이트
+    const bgIndex = backgroundElements.findIndex(bg => bg.id === selectedBackground.id);
+    if (bgIndex !== -1) {
+      backgroundElements[bgIndex].label = label;
+      backgroundElements[bgIndex].x = x;
+      backgroundElements[bgIndex].y = y;
+      backgroundElements[bgIndex].width = width;
+      backgroundElements[bgIndex].height = height;
+      backgroundElements[bgIndex].fill = fill;
+      backgroundElements[bgIndex].stroke = stroke;
+      if (selectedBackground.type === 'rect') {
+        backgroundElements[bgIndex].strokeWidth = selectedBackground.strokeWidth || 1;
+      }
+      if (selectedBackground.type === 'text') {
+        backgroundElements[bgIndex].fill = textColor;
+        backgroundElements[bgIndex].fontSize = fontSize;
+        backgroundElements[bgIndex].text = label || selectedBackground.text;
+      }
     }
     
     // 요소 업데이트
@@ -1139,6 +1177,7 @@ function setupEventListeners() {
         element.style.height = height + 'px';
         element.style.backgroundColor = fill;
         element.style.borderColor = stroke;
+        element.style.borderWidth = (selectedBackground.strokeWidth || 1) + 'px';
       } else if (selectedBackground.type === 'text') {
         element.style.color = textColor;
         element.style.fontSize = fontSize + 'px';
@@ -1318,6 +1357,18 @@ async function saveLocation(loc, showAlert = false) {
       alert('저장되었습니다.');
     }
     
+    // 위치 보기 페이지 새로고침 알림
+    try {
+      if (window.opener && !window.opener.closed) {
+        const openerUrl = window.opener.location.href;
+        if (openerUrl.includes('location_view') || openerUrl.includes('location-view')) {
+          window.opener.postMessage({ type: 'refreshLocationView' }, '*');
+        }
+      }
+    } catch (e) {
+      // cross-origin 등으로 접근 불가능한 경우 무시
+    }
+    
     // 장소 마스터 관리 페이지가 열려있으면 알림 (선택사항)
     if (window.opener && window.opener.location && window.opener.location.href.includes('location_master')) {
       console.log('장소 마스터 관리 페이지에서 새로고침이 필요할 수 있습니다.');
@@ -1359,11 +1410,13 @@ async function saveAllLocations(showAlert = false) {
     await loadLocations();
     renderLocations();
     
-    // 장소 마스터 관리 페이지가 열려있으면 알림
+    // 위치 보기 페이지 새로고침 알림
     try {
       if (window.opener && !window.opener.closed) {
         const openerUrl = window.opener.location.href;
-        if (openerUrl.includes('location_master')) {
+        if (openerUrl.includes('location_view') || openerUrl.includes('location-view')) {
+          window.opener.postMessage({ type: 'refreshLocationView' }, '*');
+        } else if (openerUrl.includes('location_master')) {
           console.log('💡 장소 마스터 관리 페이지에서 새로고침하면 변경사항을 확인할 수 있습니다.');
         }
       }
@@ -1830,6 +1883,12 @@ async function loadBackgroundElements() {
       { id: 'bg3', type: 'rect', label: 'LOADING DOCK 배경', x: 250, y: 120, width: 300, height: 25, fill: '#176687', stroke: '#000', strokeWidth: 1 },
       { id: 'bg4', type: 'text', label: 'LOADING DOCK', text: 'LOADING DOCK', x: 400, y: 135, fontSize: 15, fill: '#fff' }
     ];
+    // 기본값을 Supabase에 저장 시도 (에러는 무시)
+    try {
+      await saveBackgroundElements();
+    } catch (saveError) {
+      console.warn('기본 배경 요소 저장 실패 (무시):', saveError);
+    }
   }
 }
 
@@ -1841,33 +1900,79 @@ async function saveBackgroundElements() {
     }
     
     // 저장 전에 모든 좌표와 크기를 정수로 반올림
-    const normalizedElements = backgroundElements.map(bg => ({
-      ...bg,
-      x: Math.round(bg.x || 0),
-      y: Math.round(bg.y || 0),
-      width: Math.round(bg.width || (bg.type === 'text' ? 100 : 200)),
-      height: Math.round(bg.height || (bg.type === 'text' ? 20 : 100)),
-      fontSize: bg.fontSize ? Math.round(bg.fontSize) : undefined
-    }));
+    // 모든 속성(fill, stroke, strokeWidth 등)을 포함하여 저장
+    const normalizedElements = backgroundElements.map(bg => {
+      const normalized = {
+        ...bg, // 모든 기존 속성 포함 (fill, stroke, strokeWidth, label, text 등)
+        x: Math.round(bg.x || 0),
+        y: Math.round(bg.y || 0),
+        width: Math.round(bg.width || (bg.type === 'text' ? 100 : 200)),
+        height: Math.round(bg.height || (bg.type === 'text' ? 20 : 100)),
+        fontSize: bg.fontSize ? Math.round(bg.fontSize) : undefined,
+        strokeWidth: bg.strokeWidth ? Number(bg.strokeWidth) : (bg.type === 'rect' ? 1 : undefined)
+      };
+      return normalized;
+    });
+    
+    // 저장되는 데이터 확인용 로그
+    console.log('배경 요소 저장 데이터:', JSON.stringify(normalizedElements, null, 2));
     
     // backgroundElements 배열도 업데이트
     backgroundElements = normalizedElements;
     
     // Supabase에 저장
-    const { error } = await window.supabase
+    const { data, error } = await window.supabase
       .from('wp1_background_elements')
       .upsert({
         id: 1,
         elements_data: normalizedElements
       }, {
         onConflict: 'id'
-      });
+      })
+      .select();
     
     if (error) {
       console.error('Supabase 배경 요소 저장 실패:', error);
       throw error;
     } else {
       console.log('배경 요소가 Supabase에 저장되었습니다.');
+      console.log('저장된 데이터 확인:', JSON.stringify(data, null, 2));
+      
+      // 저장 후 다시 읽어서 확인
+      const { data: verifyData, error: verifyError } = await window.supabase
+        .from('wp1_background_elements')
+        .select('elements_data')
+        .eq('id', 1)
+        .single();
+      
+      if (!verifyError && verifyData) {
+        console.log('저장 확인 - Supabase에서 읽은 데이터:', JSON.stringify(verifyData.elements_data, null, 2));
+        // 각 요소의 x, y, width, height 확인
+        if (Array.isArray(verifyData.elements_data)) {
+          verifyData.elements_data.forEach((bg, index) => {
+            console.log(`요소 ${index + 1}:`, {
+              id: bg.id,
+              type: bg.type,
+              x: bg.x,
+              y: bg.y,
+              width: bg.width,
+              height: bg.height
+            });
+          });
+        }
+      }
+      
+      // 위치 보기 페이지 새로고침 알림
+      try {
+        if (window.opener && !window.opener.closed) {
+          const openerUrl = window.opener.location.href;
+          if (openerUrl.includes('location_view') || openerUrl.includes('location-view')) {
+            window.opener.postMessage({ type: 'refreshLocationView' }, '*');
+          }
+        }
+      } catch (e) {
+        // cross-origin 등으로 접근 불가능한 경우 무시
+      }
     }
   } catch (error) {
     console.error('배경 요소 저장 실패:', error);
@@ -1878,10 +1983,15 @@ async function saveBackgroundElements() {
 // 배경 요소 렌더링
 function renderBackgroundElements() {
   const canvas = document.getElementById('canvas');
-  if (!canvas) return;
+  if (!canvas) {
+    console.warn('캔버스를 찾을 수 없습니다.');
+    return;
+  }
   
   // 기존 배경 요소 제거
   document.querySelectorAll('.background-element').forEach(el => el.remove());
+  
+  console.log('배경 요소 렌더링 시작:', backgroundElements.length, '개');
   
   // 배경 요소 생성 (위치 박스보다 먼저 추가하여 DOM 순서상 앞에 위치)
   // z-index로 위에 표시되도록 설정됨
@@ -1895,6 +2005,8 @@ function renderBackgroundElements() {
       canvas.appendChild(element);
     }
   });
+  
+  console.log('배경 요소 렌더링 완료');
 }
 
 // 배경 요소 생성
@@ -2048,6 +2160,13 @@ function handleDragBackground(e) {
   selectedBackground.x = roundedX;
   selectedBackground.y = roundedY;
   
+  // backgroundElements 배열에서도 직접 업데이트 (참조가 끊어질 수 있으므로)
+  const bgIndex = backgroundElements.findIndex(bg => bg.id === selectedBackground.id);
+  if (bgIndex !== -1) {
+    backgroundElements[bgIndex].x = roundedX;
+    backgroundElements[bgIndex].y = roundedY;
+  }
+  
   const element = document.querySelector(`.background-element[data-id="${selectedBackground.id}"]`);
   if (element) {
     element.style.left = roundedX + 'px';
@@ -2116,6 +2235,13 @@ function startResizeBackground(bg, element, e) {
     const roundedHeight = Math.round(newHeight);
     selectedBackground.width = roundedWidth;
     selectedBackground.height = roundedHeight;
+    
+    // backgroundElements 배열에서도 직접 업데이트 (참조가 끊어질 수 있으므로)
+    const bgIndex = backgroundElements.findIndex(bg => bg.id === selectedBackground.id);
+    if (bgIndex !== -1) {
+      backgroundElements[bgIndex].width = roundedWidth;
+      backgroundElements[bgIndex].height = roundedHeight;
+    }
     
     element.style.width = roundedWidth + 'px';
     element.style.height = roundedHeight + 'px';

@@ -229,16 +229,36 @@ async function initializeSVG() {
         .eq('id', 1)
         .single();
       
+      console.log('위치 보기: Supabase 응답:', { data, error });
+      
       // Supabase에서 데이터를 성공적으로 가져왔고, 배열이 존재하며 비어있지 않은 경우
       if (!error && data && data.elements_data && Array.isArray(data.elements_data) && data.elements_data.length > 0) {
         backgroundElements = data.elements_data;
         console.log('위치 보기: Supabase에서 배경 요소 로드 완료:', backgroundElements.length, '개');
+        // 각 요소의 좌표 확인
+        backgroundElements.forEach((bg, index) => {
+          console.log(`위치 보기: 배경 요소 ${index + 1}:`, {
+            id: bg.id,
+            type: bg.type,
+            x: bg.x,
+            y: bg.y,
+            width: bg.width,
+            height: bg.height
+          });
+        });
       } else {
         // Supabase에 데이터가 없거나 빈 배열이면 배경 없음
         backgroundElements = [];
-        console.log('위치 보기: 배경 요소 데이터 없음');
+        if (error) {
+          console.log('위치 보기: Supabase 에러:', error);
+        } else if (!data || !data.elements_data) {
+          console.log('위치 보기: Supabase에 데이터 없음');
+        } else if (data.elements_data.length === 0) {
+          console.log('위치 보기: 배경 요소 배열이 비어있음');
+        }
       }
     } else {
+      console.warn('위치 보기: Supabase가 초기화되지 않음');
       backgroundElements = [];
     }
   } catch (error) {
@@ -247,29 +267,59 @@ async function initializeSVG() {
   }
   
   // 배경 요소 렌더링
-  backgroundElements.forEach(bg => {
+  console.log('위치 보기: 배경 요소 렌더링 시작, 개수:', backgroundElements.length);
+  backgroundElements.forEach((bg, index) => {
+    console.log(`위치 보기: 배경 요소 ${index + 1} 렌더링:`, {
+      type: bg.type,
+      x: bg.x,
+      y: bg.y,
+      width: bg.width,
+      height: bg.height,
+      fill: bg.fill,
+      stroke: bg.stroke,
+      strokeWidth: bg.strokeWidth
+    });
+    
     if (bg.type === 'rect') {
       const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      rect.setAttribute('x', bg.x);
-      rect.setAttribute('y', bg.y);
-      rect.setAttribute('width', bg.width);
-      rect.setAttribute('height', bg.height);
-      rect.setAttribute('fill', bg.fill || '#d3d3d3');
-      rect.setAttribute('stroke', bg.stroke || '#000');
-      rect.setAttribute('stroke-width', bg.strokeWidth || 1);
+      // 좌표를 숫자로 변환 (문자열일 수 있음)
+      const x = Number(bg.x) || 0;
+      const y = Number(bg.y) || 0;
+      const width = Number(bg.width) || 100;
+      const height = Number(bg.height) || 50;
+      const fill = bg.fill || '#d3d3d3';
+      const stroke = bg.stroke || '#000';
+      const strokeWidth = Number(bg.strokeWidth) || 1;
+      
+      rect.setAttribute('x', x);
+      rect.setAttribute('y', y);
+      rect.setAttribute('width', width);
+      rect.setAttribute('height', height);
+      rect.setAttribute('fill', fill);
+      rect.setAttribute('stroke', stroke);
+      rect.setAttribute('stroke-width', strokeWidth);
       svg.appendChild(rect);
+      console.log(`위치 보기: rect 요소 추가됨 - x:${x}, y:${y}, width:${width}, height:${height}, fill:${fill}, stroke:${stroke}, strokeWidth:${strokeWidth}`);
     } else if (bg.type === 'text') {
       const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      text.setAttribute('x', bg.x);
-      text.setAttribute('y', bg.y);
-      text.setAttribute('font-size', bg.fontSize || 15);
-      text.setAttribute('fill', bg.fill || '#000');
+      // 좌표를 숫자로 변환 (문자열일 수 있음)
+      const x = Number(bg.x) || 0;
+      const y = Number(bg.y) || 0;
+      const fontSize = Number(bg.fontSize) || 15;
+      const fill = bg.fill || '#000';
+      
+      text.setAttribute('x', x);
+      text.setAttribute('y', y);
+      text.setAttribute('font-size', fontSize);
+      text.setAttribute('fill', fill);
       text.setAttribute('text-anchor', 'middle');
       text.setAttribute('alignment-baseline', 'middle');
       text.textContent = bg.text || bg.label || '';
       svg.appendChild(text);
+      console.log(`위치 보기: text 요소 추가됨 - x:${x}, y:${y}, fontSize:${fontSize}, fill:${fill}`);
     }
   });
+  console.log('위치 보기: 배경 요소 렌더링 완료');
   currentSVG = svg;
   return svg;
 }
@@ -637,8 +687,11 @@ async function loadEmptyLocationDropdown() {
 
 // Location View 초기화
 async function resetLocationView() {
+  console.log('위치 보기: resetLocationView() 호출됨');
+  
   // 위치 레이아웃 먼저 로드
   await loadLocationLayout();
+  console.log('위치 보기: 위치 레이아웃 로드 완료');
   
   // SVG 완전 교체
   const oldSVG = document.getElementById('locationSVG');
@@ -652,8 +705,12 @@ async function resetLocationView() {
     newSVG.setAttribute('style', 'width:100vw; height:80vh; max-width:100%; background:#f8fafc; border:1.5px solid #333; box-shadow:0 2px 12px #0002;');
     svgParent.appendChild(newSVG);
     currentSVG = newSVG;
+    console.log('위치 보기: SVG 교체 완료');
   }
+  
+  console.log('위치 보기: initializeSVG() 호출 시작');
   await initializeSVG();
+  console.log('위치 보기: initializeSVG() 완료');
   // 필터 초기화 (존재할 때만)
   const productFilter = document.getElementById('filterProduct');
   if (productFilter) productFilter.value = '';
@@ -1172,8 +1229,33 @@ async function printShippingLabel(si) {
 
 // LOCATION VIEW 자동 새로고침 메시지 리스너
 window.addEventListener('message', (event) => {
+  console.log('위치 보기: 메시지 수신:', event.data);
   if (event.data && event.data.type === 'refreshLocationView') {
-    window.location.reload();
+    console.log('위치 보기: refreshLocationView 메시지 수신, resetLocationView() 호출');
+    // 페이지 새로고침 대신 resetLocationView 호출 (더 부드러운 업데이트)
+    resetLocationView();
+  }
+});
+
+// 페이지 포커스가 돌아올 때 자동 새로고침 (시각적 편집기에서 돌아올 때)
+let lastFocusTime = Date.now();
+window.addEventListener('focus', () => {
+  // 5초 이상 포커스를 잃었다가 돌아온 경우에만 새로고침
+  const timeSinceLastFocus = Date.now() - lastFocusTime;
+  console.log('위치 보기: 포커스 복귀, 경과 시간:', timeSinceLastFocus, 'ms');
+  if (timeSinceLastFocus > 5000) {
+    console.log('위치 보기: 5초 이상 경과, resetLocationView() 호출');
+    resetLocationView();
+  }
+  lastFocusTime = Date.now();
+});
+
+// 페이지가 보일 때도 체크 (탭 전환 시)
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    console.log('위치 보기: 페이지가 다시 보임, resetLocationView() 호출');
+    // 페이지가 다시 보일 때 최신 데이터 로드
+    resetLocationView();
   }
 });
 

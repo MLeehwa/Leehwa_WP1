@@ -425,10 +425,9 @@ async function showCurrentLocationsModal() {
     svg.style.border = '2px solid #333';
     svg.style.backgroundColor = 'white';
     
-    // 배경 요소 로드 (Supabase에서, 없으면 localStorage에서)
+    // 배경 요소 로드 (Supabase에서만)
     let backgroundElements = [];
     try {
-      // 먼저 Supabase에서 로드 시도
       if (supabase) {
         const { data, error } = await supabase
           .from('wp1_background_elements')
@@ -436,37 +435,18 @@ async function showCurrentLocationsModal() {
           .eq('id', 1)
           .single();
         
-        if (!error && data && data.elements_data) {
-          backgroundElements = Array.isArray(data.elements_data) ? data.elements_data : [];
-          // localStorage에도 백업 저장
-          if (backgroundElements.length > 0) {
-            localStorage.setItem('wp1_background_elements', JSON.stringify(backgroundElements));
-          }
+        // Supabase에서 데이터를 성공적으로 가져왔고, 배열이 존재하며 비어있지 않은 경우
+        if (!error && data && data.elements_data && Array.isArray(data.elements_data) && data.elements_data.length > 0) {
+          backgroundElements = data.elements_data;
         } else {
-          // Supabase에 데이터가 없으면 localStorage에서 로드
-          const saved = localStorage.getItem('wp1_background_elements');
-          if (saved) {
-            backgroundElements = JSON.parse(saved);
-          }
+          backgroundElements = [];
         }
       } else {
-        // Supabase가 없으면 localStorage에서 로드
-        const saved = localStorage.getItem('wp1_background_elements');
-        if (saved) {
-          backgroundElements = JSON.parse(saved);
-        }
+        backgroundElements = [];
       }
     } catch (e) {
       console.error('배경 요소 로드 실패:', e);
-      // 에러 발생 시 localStorage에서 로드 시도
-      try {
-        const saved = localStorage.getItem('wp1_background_elements');
-        if (saved) {
-          backgroundElements = JSON.parse(saved);
-        }
-      } catch (e2) {
-        console.error('localStorage 로드도 실패:', e2);
-      }
+      backgroundElements = [];
     }
     
     // 배경 요소 렌더링

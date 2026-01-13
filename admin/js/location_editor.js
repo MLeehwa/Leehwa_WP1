@@ -415,14 +415,14 @@ function handleDrag(e) {
       newX = Math.max(0, Math.min(newX, canvas.offsetWidth - loc.width));
       newY = Math.max(0, Math.min(newY, canvas.offsetHeight - loc.height));
       
-      // 임시로 위치 업데이트 (저장 전)
-      loc.x = newX;
-      loc.y = newY;
+      // 임시로 위치 업데이트 (저장 전, 정수로 반올림)
+      loc.x = Math.round(newX);
+      loc.y = Math.round(newY);
       
       const box = document.querySelector(`.location-box[data-id="${loc.id}"]`);
       if (box) {
-        box.style.left = newX + 'px';
-        box.style.top = newY + 'px';
+        box.style.left = Math.round(newX) + 'px';
+        box.style.top = Math.round(newY) + 'px';
       }
     });
     
@@ -464,18 +464,20 @@ function handleDrag(e) {
   x = Math.max(0, Math.min(x, canvas.offsetWidth - selectedLocation.width));
   y = Math.max(0, Math.min(y, canvas.offsetHeight - selectedLocation.height));
   
-  // 임시로 위치 업데이트 (저장 전)
-  selectedLocation.x = x;
-  selectedLocation.y = y;
+  // 임시로 위치 업데이트 (저장 전, 정수로 반올림)
+  selectedLocation.x = Math.round(x);
+  selectedLocation.y = Math.round(y);
   
   // box 변수는 이미 위에서 선언되었으므로 재사용
   if (box) {
-    box.style.left = x + 'px';
-    box.style.top = y + 'px';
+    const roundedX = Math.round(x);
+    const roundedY = Math.round(y);
+    box.style.left = roundedX + 'px';
+    box.style.top = roundedY + 'px';
     
     // 정보 패널 업데이트
-    document.getElementById('editX').value = x;
-    document.getElementById('editY').value = y;
+    document.getElementById('editX').value = roundedX;
+    document.getElementById('editY').value = roundedY;
   }
 }
 
@@ -504,10 +506,16 @@ async function stopDrag() {
     saveToUndoStack();
     
     // 자동 저장 (alert 표시 안 함)
-    if (selectedLocations.length > 1) {
-      await saveAllLocations();
-    } else if (selectedLocation) {
-      await saveLocation(selectedLocation, false);
+    try {
+      if (selectedLocations.length > 1) {
+        await saveAllLocations();
+      } else if (selectedLocation) {
+        await saveLocation(selectedLocation, false);
+      }
+      console.log('위치가 자동 저장되었습니다.');
+    } catch (error) {
+      console.error('위치 자동 저장 실패:', error);
+      // 저장 실패해도 UI는 업데이트되었으므로 사용자에게 알림
     }
   }
   
@@ -707,8 +715,13 @@ function startResize(loc, box, e) {
       saveToUndoStack();
       
       // 자동 저장
-      if (selectedLocation) {
-        await saveLocation(selectedLocation, false);
+      try {
+        if (selectedLocation) {
+          await saveLocation(selectedLocation, false);
+          console.log('위치 크기가 자동 저장되었습니다.');
+        }
+      } catch (error) {
+        console.error('위치 크기 자동 저장 실패:', error);
       }
     }
     isResizing = false;
@@ -1786,32 +1799,21 @@ async function loadBackgroundElements() {
       throw new Error('Supabase가 아직 초기화되지 않았습니다.');
     }
     
-    // 먼저 Supabase에서 로드 시도
+    // Supabase에서 로드
     const { data, error } = await window.supabase
       .from('wp1_background_elements')
       .select('elements_data')
       .eq('id', 1)
       .single();
     
-    if (!error && data && data.elements_data) {
-      backgroundElements = Array.isArray(data.elements_data) ? data.elements_data : [];
-      // localStorage에도 백업 저장 (오프라인 대비)
-      if (backgroundElements.length > 0) {
-        localStorage.setItem('wp1_background_elements', JSON.stringify(backgroundElements));
-      }
+    // Supabase에서 데이터를 성공적으로 가져왔고, 배열이 존재하며 비어있지 않은 경우
+    if (!error && data && data.elements_data && Array.isArray(data.elements_data) && data.elements_data.length > 0) {
+      backgroundElements = data.elements_data;
+      console.log('Supabase에서 배경 요소 로드 완료:', backgroundElements.length, '개');
       return;
     }
     
-    // Supabase에 데이터가 없으면 localStorage에서 로드 시도
-    const saved = localStorage.getItem('wp1_background_elements');
-    if (saved) {
-      backgroundElements = JSON.parse(saved);
-      // localStorage 데이터를 Supabase에 저장 (마이그레이션)
-      await saveBackgroundElements();
-      return;
-    }
-    
-    // 둘 다 없으면 기본값 사용
+    // Supabase에 데이터가 없거나 빈 배열이면 기본값 사용
     backgroundElements = [
       { id: 'bg1', type: 'rect', label: '왼쪽 세로 구역', x: 1, y: 1, width: 175, height: 575, fill: '#d3d3d3', stroke: '#000', strokeWidth: 1 },
       { id: 'bg2', type: 'rect', label: '하단 가로 구역', x: 177.5, y: 151, width: 480, height: 425, fill: '#d3d3d3', stroke: '#000', strokeWidth: 1 },
@@ -1821,17 +1823,7 @@ async function loadBackgroundElements() {
     await saveBackgroundElements();
   } catch (error) {
     console.error('배경 요소 로드 실패:', error);
-    // 에러 발생 시 localStorage에서 로드 시도
-    try {
-      const saved = localStorage.getItem('wp1_background_elements');
-      if (saved) {
-        backgroundElements = JSON.parse(saved);
-        return;
-      }
-    } catch (e) {
-      console.error('localStorage 로드도 실패:', e);
-    }
-    // 둘 다 실패하면 기본값 사용
+    // 에러 발생 시 기본값 사용
     backgroundElements = [
       { id: 'bg1', type: 'rect', label: '왼쪽 세로 구역', x: 1, y: 1, width: 175, height: 575, fill: '#d3d3d3', stroke: '#000', strokeWidth: 1 },
       { id: 'bg2', type: 'rect', label: '하단 가로 구역', x: 177.5, y: 151, width: 480, height: 425, fill: '#d3d3d3', stroke: '#000', strokeWidth: 1 },
@@ -1841,9 +1833,13 @@ async function loadBackgroundElements() {
   }
 }
 
-// 배경 요소 저장 (Supabase와 localStorage에)
+// 배경 요소 저장 (Supabase에만)
 async function saveBackgroundElements() {
   try {
+    if (!window.supabase) {
+      throw new Error('Supabase가 초기화되지 않았습니다.');
+    }
+    
     // 저장 전에 모든 좌표와 크기를 정수로 반올림
     const normalizedElements = backgroundElements.map(bg => ({
       ...bg,
@@ -1857,27 +1853,25 @@ async function saveBackgroundElements() {
     // backgroundElements 배열도 업데이트
     backgroundElements = normalizedElements;
     
-    // localStorage에 백업 저장 (오프라인 대비)
-    localStorage.setItem('wp1_background_elements', JSON.stringify(normalizedElements));
-    
     // Supabase에 저장
-    if (window.supabase) {
-      const { error } = await window.supabase
-        .from('wp1_background_elements')
-        .upsert({
-          id: 1,
-          elements_data: normalizedElements
-        }, {
-          onConflict: 'id'
-        });
-      
-      if (error) {
-        console.error('Supabase 배경 요소 저장 실패:', error);
-        // Supabase 저장 실패해도 localStorage는 저장되었으므로 계속 진행
-      }
+    const { error } = await window.supabase
+      .from('wp1_background_elements')
+      .upsert({
+        id: 1,
+        elements_data: normalizedElements
+      }, {
+        onConflict: 'id'
+      });
+    
+    if (error) {
+      console.error('Supabase 배경 요소 저장 실패:', error);
+      throw error;
+    } else {
+      console.log('배경 요소가 Supabase에 저장되었습니다.');
     }
   } catch (error) {
     console.error('배경 요소 저장 실패:', error);
+    throw error;
   }
 }
 
@@ -1940,9 +1934,15 @@ function createBackgroundElement(bg) {
   
   // 클릭 이벤트
   element.addEventListener('mousedown', (e) => {
-    if (currentMode !== 'background' || isDrawing) {
+    if (currentMode !== 'background') {
       e.stopPropagation();
       return;
+    }
+    
+    // 그리기 모드에서도 배경 요소를 클릭하면 드래그 가능 (빈 공간 클릭 시에만 그리기 시작)
+    // 배경 요소나 리사이즈 핸들을 클릭한 경우 그리기 취소
+    if (isDrawing) {
+      cancelDrawing();
     }
     
     // 리사이즈 핸들 클릭

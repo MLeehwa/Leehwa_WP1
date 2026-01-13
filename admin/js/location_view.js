@@ -219,10 +219,9 @@ async function initializeSVG() {
     svg.removeChild(svg.firstChild);
   }
 
-  // 배경 요소 로드 및 렌더링 (Supabase에서, 없으면 localStorage에서, 없으면 기본값 사용)
+  // 배경 요소 로드 및 렌더링 (Supabase에서만)
   let backgroundElements = [];
   try {
-    // 먼저 Supabase에서 로드 시도
     if (supabase) {
       const { data, error } = await supabase
         .from('wp1_background_elements')
@@ -230,67 +229,21 @@ async function initializeSVG() {
         .eq('id', 1)
         .single();
       
-      if (!error && data && data.elements_data) {
-        backgroundElements = Array.isArray(data.elements_data) ? data.elements_data : [];
-        // localStorage에도 백업 저장 (오프라인 대비)
-        if (backgroundElements.length > 0) {
-          localStorage.setItem('wp1_background_elements', JSON.stringify(backgroundElements));
-        }
+      // Supabase에서 데이터를 성공적으로 가져왔고, 배열이 존재하며 비어있지 않은 경우
+      if (!error && data && data.elements_data && Array.isArray(data.elements_data) && data.elements_data.length > 0) {
+        backgroundElements = data.elements_data;
+        console.log('위치 보기: Supabase에서 배경 요소 로드 완료:', backgroundElements.length, '개');
       } else {
-        // Supabase에 데이터가 없으면 localStorage에서 로드 시도
-        const saved = localStorage.getItem('wp1_background_elements');
-        if (saved) {
-          backgroundElements = JSON.parse(saved);
-        } else {
-          // 둘 다 없으면 기본값 사용
-          backgroundElements = [
-            { type: 'rect', x: 1, y: 1, width: 175, height: 575, fill: '#d3d3d3', stroke: '#000', strokeWidth: 1 },
-            { type: 'rect', x: 177.5, y: 151, width: 480, height: 425, fill: '#d3d3d3', stroke: '#000', strokeWidth: 1 },
-            { type: 'rect', x: 250, y: 120, width: 300, height: 25, fill: '#176687', stroke: '#000', strokeWidth: 1 },
-            { type: 'text', text: 'LOADING DOCK', x: 400, y: 135, fontSize: 15, fill: '#fff' }
-          ];
-        }
+        // Supabase에 데이터가 없거나 빈 배열이면 배경 없음
+        backgroundElements = [];
+        console.log('위치 보기: 배경 요소 데이터 없음');
       }
     } else {
-      // Supabase가 없으면 localStorage에서 로드
-      const saved = localStorage.getItem('wp1_background_elements');
-      if (saved) {
-        backgroundElements = JSON.parse(saved);
-      } else {
-        // 기본값 사용
-        backgroundElements = [
-          { type: 'rect', x: 1, y: 1, width: 175, height: 575, fill: '#d3d3d3', stroke: '#000', strokeWidth: 1 },
-          { type: 'rect', x: 177.5, y: 151, width: 480, height: 425, fill: '#d3d3d3', stroke: '#000', strokeWidth: 1 },
-          { type: 'rect', x: 250, y: 120, width: 300, height: 25, fill: '#176687', stroke: '#000', strokeWidth: 1 },
-          { type: 'text', text: 'LOADING DOCK', x: 400, y: 135, fontSize: 15, fill: '#fff' }
-        ];
-      }
+      backgroundElements = [];
     }
   } catch (error) {
-    console.error('배경 요소 로드 실패:', error);
-    // 에러 발생 시 localStorage에서 로드 시도
-    try {
-      const saved = localStorage.getItem('wp1_background_elements');
-      if (saved) {
-        backgroundElements = JSON.parse(saved);
-      } else {
-        // 기본값 사용
-        backgroundElements = [
-          { type: 'rect', x: 1, y: 1, width: 175, height: 575, fill: '#d3d3d3', stroke: '#000', strokeWidth: 1 },
-          { type: 'rect', x: 177.5, y: 151, width: 480, height: 425, fill: '#d3d3d3', stroke: '#000', strokeWidth: 1 },
-          { type: 'rect', x: 250, y: 120, width: 300, height: 25, fill: '#176687', stroke: '#000', strokeWidth: 1 },
-          { type: 'text', text: 'LOADING DOCK', x: 400, y: 135, fontSize: 15, fill: '#fff' }
-        ];
-      }
-    } catch (e) {
-      // localStorage도 실패하면 기본값 사용
-      backgroundElements = [
-        { type: 'rect', x: 1, y: 1, width: 175, height: 575, fill: '#d3d3d3', stroke: '#000', strokeWidth: 1 },
-        { type: 'rect', x: 177.5, y: 151, width: 480, height: 425, fill: '#d3d3d3', stroke: '#000', strokeWidth: 1 },
-        { type: 'rect', x: 250, y: 120, width: 300, height: 25, fill: '#176687', stroke: '#000', strokeWidth: 1 },
-        { type: 'text', text: 'LOADING DOCK', x: 400, y: 135, fontSize: 15, fill: '#fff' }
-      ];
-    }
+    console.error('위치 보기: 배경 요소 로드 실패:', error);
+    backgroundElements = [];
   }
   
   // 배경 요소 렌더링

@@ -41,7 +41,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   
   await loadLocations();
-  await loadBackgroundElements();
+  loadBackgroundElements();
   // 배경 요소를 먼저 렌더링 (DOM 순서상 앞에 위치)
   renderBackgroundElements();
   // 위치 박스를 나중에 렌더링 (z-index로 배경 위에 표시)
@@ -1023,7 +1023,7 @@ function setupEventListeners() {
   });
   
   // 새 배경 요소 추가 (직접 추가 모드)
-  document.getElementById('addBackgroundBtn').addEventListener('click', () => {
+  document.getElementById('addBackgroundBtn').addEventListener('click', async () => {
     const type = document.getElementById('backgroundType').value;
     const label = document.getElementById('backgroundLabel').value.trim();
     
@@ -1075,7 +1075,7 @@ function setupEventListeners() {
       canvas.appendChild(element);
     }
     selectBackground(newBg, element);
-    saveBackgroundElements();
+    await saveBackgroundElements();
     
     // 입력 필드 초기화
     document.getElementById('backgroundLabel').value = '';
@@ -1088,7 +1088,7 @@ function setupEventListeners() {
   });
   
   // 배경 요소 저장
-  document.getElementById('saveBackgroundBtn').addEventListener('click', () => {
+  document.getElementById('saveBackgroundBtn').addEventListener('click', async () => {
     if (!selectedBackground) return;
     
     const label = document.getElementById('editBackgroundLabel').value.trim();
@@ -1133,7 +1133,7 @@ function setupEventListeners() {
       }
     }
     
-    saveBackgroundElements();
+    await saveBackgroundElements();
     alert('저장되었습니다.');
   });
   
@@ -1513,7 +1513,7 @@ function updateDrawingPreview(e) {
 }
 
 // 그리기 완료
-function finishDrawing(e) {
+async function finishDrawing(e) {
   if (!isDrawing || !drawPreview) return;
   
   const canvas = document.getElementById('canvas');
@@ -1567,7 +1567,7 @@ function finishDrawing(e) {
     canvas.appendChild(element);
   }
   selectBackground(newBg, element);
-  saveBackgroundElements();
+  await saveBackgroundElements();
   
   // 미리보기 제거
   cancelDrawing();
@@ -1779,26 +1779,59 @@ function stopDrawing() {
   }
 }
 
-// 배경 요소 로드 (localStorage에서, 없으면 현재 코드의 기본값 사용)
-function loadBackgroundElements() {
+// 배경 요소 로드 (Supabase에서, 없으면 localStorage에서, 없으면 기본값 사용)
+async function loadBackgroundElements() {
   try {
+    if (!window.supabase) {
+      throw new Error('Supabase가 아직 초기화되지 않았습니다.');
+    }
+    
+    // 먼저 Supabase에서 로드 시도
+    const { data, error } = await window.supabase
+      .from('wp1_background_elements')
+      .select('elements_data')
+      .eq('id', 1)
+      .single();
+    
+    if (!error && data && data.elements_data) {
+      backgroundElements = Array.isArray(data.elements_data) ? data.elements_data : [];
+      // localStorage에도 백업 저장 (오프라인 대비)
+      if (backgroundElements.length > 0) {
+        localStorage.setItem('wp1_background_elements', JSON.stringify(backgroundElements));
+      }
+      return;
+    }
+    
+    // Supabase에 데이터가 없으면 localStorage에서 로드 시도
     const saved = localStorage.getItem('wp1_background_elements');
     if (saved) {
       backgroundElements = JSON.parse(saved);
-    } else {
-      // 현재 location_view.html과 location_view.js에 하드코딩된 기본 배경 요소
-      // location_view.html 기준으로 설정
-      backgroundElements = [
-        { id: 'bg1', type: 'rect', label: '왼쪽 세로 구역', x: 1, y: 1, width: 175, height: 575, fill: '#d3d3d3', stroke: '#000', strokeWidth: 1 },
-        { id: 'bg2', type: 'rect', label: '하단 가로 구역', x: 177.5, y: 151, width: 480, height: 425, fill: '#d3d3d3', stroke: '#000', strokeWidth: 1 },
-        { id: 'bg3', type: 'rect', label: 'LOADING DOCK 배경', x: 250, y: 120, width: 300, height: 25, fill: '#176687', stroke: '#000', strokeWidth: 1 },
-        { id: 'bg4', type: 'text', label: 'LOADING DOCK', text: 'LOADING DOCK', x: 400, y: 135, fontSize: 15, fill: '#fff' }
-      ];
-      saveBackgroundElements();
+      // localStorage 데이터를 Supabase에 저장 (마이그레이션)
+      await saveBackgroundElements();
+      return;
     }
+    
+    // 둘 다 없으면 기본값 사용
+    backgroundElements = [
+      { id: 'bg1', type: 'rect', label: '왼쪽 세로 구역', x: 1, y: 1, width: 175, height: 575, fill: '#d3d3d3', stroke: '#000', strokeWidth: 1 },
+      { id: 'bg2', type: 'rect', label: '하단 가로 구역', x: 177.5, y: 151, width: 480, height: 425, fill: '#d3d3d3', stroke: '#000', strokeWidth: 1 },
+      { id: 'bg3', type: 'rect', label: 'LOADING DOCK 배경', x: 250, y: 120, width: 300, height: 25, fill: '#176687', stroke: '#000', strokeWidth: 1 },
+      { id: 'bg4', type: 'text', label: 'LOADING DOCK', text: 'LOADING DOCK', x: 400, y: 135, fontSize: 15, fill: '#fff' }
+    ];
+    await saveBackgroundElements();
   } catch (error) {
     console.error('배경 요소 로드 실패:', error);
-    // 에러 발생 시 기본값 사용
+    // 에러 발생 시 localStorage에서 로드 시도
+    try {
+      const saved = localStorage.getItem('wp1_background_elements');
+      if (saved) {
+        backgroundElements = JSON.parse(saved);
+        return;
+      }
+    } catch (e) {
+      console.error('localStorage 로드도 실패:', e);
+    }
+    // 둘 다 실패하면 기본값 사용
     backgroundElements = [
       { id: 'bg1', type: 'rect', label: '왼쪽 세로 구역', x: 1, y: 1, width: 175, height: 575, fill: '#d3d3d3', stroke: '#000', strokeWidth: 1 },
       { id: 'bg2', type: 'rect', label: '하단 가로 구역', x: 177.5, y: 151, width: 480, height: 425, fill: '#d3d3d3', stroke: '#000', strokeWidth: 1 },
@@ -1808,8 +1841,8 @@ function loadBackgroundElements() {
   }
 }
 
-// 배경 요소 저장 (localStorage에)
-function saveBackgroundElements() {
+// 배경 요소 저장 (Supabase와 localStorage에)
+async function saveBackgroundElements() {
   try {
     // 저장 전에 모든 좌표와 크기를 정수로 반올림
     const normalizedElements = backgroundElements.map(bg => ({
@@ -1817,11 +1850,32 @@ function saveBackgroundElements() {
       x: Math.round(bg.x || 0),
       y: Math.round(bg.y || 0),
       width: Math.round(bg.width || (bg.type === 'text' ? 100 : 200)),
-      height: Math.round(bg.height || (bg.type === 'text' ? 20 : 100))
+      height: Math.round(bg.height || (bg.type === 'text' ? 20 : 100)),
+      fontSize: bg.fontSize ? Math.round(bg.fontSize) : undefined
     }));
-    localStorage.setItem('wp1_background_elements', JSON.stringify(normalizedElements));
+    
     // backgroundElements 배열도 업데이트
     backgroundElements = normalizedElements;
+    
+    // localStorage에 백업 저장 (오프라인 대비)
+    localStorage.setItem('wp1_background_elements', JSON.stringify(normalizedElements));
+    
+    // Supabase에 저장
+    if (window.supabase) {
+      const { error } = await window.supabase
+        .from('wp1_background_elements')
+        .upsert({
+          id: 1,
+          elements_data: normalizedElements
+        }, {
+          onConflict: 'id'
+        });
+      
+      if (error) {
+        console.error('Supabase 배경 요소 저장 실패:', error);
+        // Supabase 저장 실패해도 localStorage는 저장되었으므로 계속 진행
+      }
+    }
   } catch (error) {
     console.error('배경 요소 저장 실패:', error);
   }
@@ -2006,11 +2060,11 @@ function handleDragBackground(e) {
 }
 
 // 배경 요소 드래그 종료
-function stopDragBackground() {
+async function stopDragBackground() {
   isDragging = false;
   document.removeEventListener('mousemove', handleDragBackground);
   document.removeEventListener('mouseup', stopDragBackground);
-  saveBackgroundElements();
+  await saveBackgroundElements();
 }
 
 // 배경 요소 리사이즈 시작
@@ -2071,11 +2125,11 @@ function startResizeBackground(bg, element, e) {
     document.getElementById('editBgHeight').value = roundedHeight;
   }
   
-  function stopResize() {
+  async function stopResize() {
     isResizing = false;
     document.removeEventListener('mousemove', handleResize);
     document.removeEventListener('mouseup', stopResize);
-    saveBackgroundElements();
+    await saveBackgroundElements();
   }
   
   document.addEventListener('mousemove', handleResize);
@@ -2429,7 +2483,7 @@ async function deleteLocation() {
 }
 
 // 배경 요소 삭제
-function deleteBackground() {
+async function deleteBackground() {
   if (!selectedBackground) return;
   
   if (!confirm(`"${selectedBackground.label || '배경 요소'}"를 삭제하시겠습니까?`)) return;
@@ -2441,7 +2495,7 @@ function deleteBackground() {
   backgroundElements = backgroundElements.filter(bg => bg.id !== selectedBackground.id);
   selectedBackground = null;
   document.getElementById('selectedBackgroundInfo').classList.add('hidden');
-  saveBackgroundElements();
+  await saveBackgroundElements();
 }
 
 // ==================== 줌/패닝 기능 ====================

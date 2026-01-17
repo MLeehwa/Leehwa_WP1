@@ -871,7 +871,17 @@ function showLocationModal(loc, info) {
       <div><b>컨테이너/트레일러:</b> ${info.container_id || '-'}</div>
       <div><b>Total Items:</b> ${info.total_items || 1}개</div>
       ${partsInfo}
+      <div class="mt-4">
+        <button id="moveToEmptyLocationBtn" class="w-full bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">
+          빈 공간으로 이동
+        </button>
+      </div>
     `;
+    
+    // 빈 공간으로 이동 버튼 이벤트
+    document.getElementById('moveToEmptyLocationBtn').addEventListener('click', () => {
+      showMoveToEmptyLocationModal(loc, info);
+    });
     shippingOrderArea.innerHTML = `<div class="mt-4 text-sm text-gray-500">출하지시서 상태 확인 중...</div>`;
     // 출하지시서 존재 여부 확인 - 컨테이너 단위로 확인
     (async () => {
@@ -1074,6 +1084,282 @@ function showLocationModal(loc, info) {
 }
 
 // 출하지시서 라벨 프린트 함수
+// 빈 공간으로 이동 모달 표시
+async function showMoveToEmptyLocationModal(currentLocationCode, locationInfo) {
+  if (!window.supabase) {
+    alert('Supabase가 아직 로드되지 않았습니다.');
+    return;
+  }
+  
+  const supabase = window.supabase;
+  
+  // 모달 HTML 생성
+  const modalHTML = `
+    <div id="moveLocationModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 z-50 flex items-center justify-center p-4">
+      <div class="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <div class="p-6 border-b flex justify-between items-center">
+          <h2 class="text-2xl font-bold">빈 위치로 이동: ${currentLocationCode}</h2>
+          <button id="closeMoveLocationModal" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+        </div>
+        <div class="p-6 overflow-auto flex-1">
+          <div class="mb-4 bg-blue-50 p-4 rounded">
+            <div class="text-sm text-blue-800">
+              <strong>이동할 컨테이너:</strong> ${locationInfo.container_id || '-'}<br>
+              <strong>현재 위치:</strong> ${currentLocationCode}<br>
+              <strong>제품:</strong> ${locationInfo.part_no || '-'} (${locationInfo.qty || 0}개)
+            </div>
+          </div>
+          <div id="moveLocationMapContent" class="text-center py-8">
+            <div class="text-gray-500">로딩 중...</div>
+          </div>
+        </div>
+        <div class="p-4 border-t bg-gray-50">
+          <div class="mb-2 text-sm text-blue-600 font-semibold">
+            💡 초록색으로 표시된 빈 위치를 클릭하여 이동할 위치를 선택하세요
+          </div>
+          <div class="flex gap-4 text-sm">
+            <div class="flex items-center gap-2">
+              <div class="w-4 h-4 bg-green-200 border border-green-400"></div>
+              <span>빈 위치 (사용 가능) - 클릭 가능</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="w-4 h-4 bg-red-200 border border-red-400"></div>
+              <span>사용 중</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="w-4 h-4 bg-gray-200 border border-gray-400"></div>
+              <span>사용 불가/점검 중</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // 기존 모달이 있으면 제거
+  const existingModal = document.getElementById('moveLocationModal');
+  if (existingModal) {
+    existingModal.remove();
+  }
+  
+  // 모달 추가
+  document.body.insertAdjacentHTML('beforeend', modalHTML);
+  
+  // 닫기 버튼 이벤트
+  document.getElementById('closeMoveLocationModal').addEventListener('click', () => {
+    document.getElementById('moveLocationModal').remove();
+  });
+  
+  // 모달 배경 클릭 시 닫기
+  document.getElementById('moveLocationModal').addEventListener('click', (e) => {
+    if (e.target.id === 'moveLocationModal') {
+      e.target.remove();
+    }
+  });
+  
+  // 데이터 로드 및 표시
+  const contentDiv = document.getElementById('moveLocationMapContent');
+  contentDiv.innerHTML = '<div class="text-gray-500">데이터를 불러오는 중...</div>';
+  
+  try {
+    // 1. 모든 위치 로드
+    const { data: locations, error: locError } = await supabase
+      .from('wp1_locations')
+      .select('location_code, x, y, width, height, status')
+      .order('location_code');
+    
+    if (locError) throw locError;
+    
+    // 2. 실제 사용 중인 위치 확인 (receiving_items에서)
+    const { data: receivingItems, error: recError } = await supabase
+      .from('receiving_items')
+      .select('location_code, container_no');
+    
+    if (recError) throw recError;
+    
+    // 3. 출고된 항목 확인
+    const { data: shippedItems, error: shipError } = await supabase
+      .from('shipping_instruction')
+      .select('container_no, status')
+      .eq('status', 'shipped');
+    
+    if (shipError) throw shipError;
+    
+    const shippedContainers = new Set((shippedItems || []).map(item => item.container_no));
+    
+    // 실제 사용 중인 위치 집합
+    const occupiedLocations = new Set();
+    (receivingItems || []).forEach(item => {
+      if (item.location_code && !shippedContainers.has(item.container_no)) {
+        const normalizedCode = normalizeLocationCode(item.location_code);
+        occupiedLocations.add(normalizedCode);
+      }
+    });
+    
+    // 4. SVG 생성
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', '1000');
+    svg.setAttribute('height', '800');
+    svg.setAttribute('viewBox', '0 0 1000 800');
+    svg.style.border = '2px solid #333';
+    svg.style.backgroundColor = 'white';
+    
+    // 배경 요소 로드
+    let backgroundElements = [];
+    try {
+      if (window.supabase) {
+        const { data, error } = await window.supabase
+          .from('wp1_background_elements')
+          .select('elements_data')
+          .eq('id', 1)
+          .single();
+        
+        if (!error && data && data.elements_data && Array.isArray(data.elements_data) && data.elements_data.length > 0) {
+          backgroundElements = data.elements_data;
+        }
+      }
+    } catch (e) {
+      console.error('배경 요소 로드 실패:', e);
+    }
+    
+    // 배경 요소 렌더링
+    backgroundElements.forEach(bg => {
+      if (bg.type === 'rect') {
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', bg.x);
+        rect.setAttribute('y', bg.y);
+        rect.setAttribute('width', bg.width);
+        rect.setAttribute('height', bg.height);
+        rect.setAttribute('fill', bg.fill || '#d3d3d3');
+        rect.setAttribute('stroke', bg.stroke || '#000');
+        rect.setAttribute('stroke-width', bg.strokeWidth || 1);
+        svg.appendChild(rect);
+      } else if (bg.type === 'text') {
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', bg.x);
+        text.setAttribute('y', bg.y);
+        text.setAttribute('font-size', bg.fontSize || 15);
+        text.setAttribute('fill', bg.fill || '#000');
+        text.setAttribute('text-anchor', 'middle');
+        text.textContent = bg.text || bg.label || '';
+        svg.appendChild(text);
+      }
+    });
+    
+    // 위치 렌더링
+    const locationsWithCoords = (locations || []).filter(loc => 
+      loc.x !== null && loc.y !== null && loc.width !== null && loc.height !== null
+    );
+    
+    locationsWithCoords.forEach(loc => {
+      const normalizedCode = normalizeLocationCode(loc.location_code);
+      const isOccupied = occupiedLocations.has(normalizedCode);
+      const isAvailable = loc.status === 'available' && !isOccupied;
+      
+      const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('x', loc.x);
+      rect.setAttribute('y', loc.y);
+      rect.setAttribute('width', loc.width);
+      rect.setAttribute('height', loc.height);
+      
+      if (isAvailable) {
+        // 빈 위치 - 초록색, 클릭 가능
+        rect.setAttribute('fill', '#90EE90');
+        rect.setAttribute('fill-opacity', '0.7');
+        rect.setAttribute('stroke', '#228B22');
+        rect.setAttribute('stroke-width', '2');
+        rect.style.cursor = 'pointer';
+        
+        // 클릭 이벤트: 위치 이동 확인
+        group.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          
+          if (!confirm(`"${normalizedCode}" 위치로 이동하시겠습니까?`)) {
+            return;
+          }
+          
+          try {
+            // receiving_items에서 해당 컨테이너의 모든 항목 업데이트
+            const { error: updateError } = await supabase
+              .from('receiving_items')
+              .update({ location_code: loc.location_code })
+              .eq('container_no', locationInfo.container_id);
+            
+            if (updateError) throw updateError;
+            
+            alert(`위치가 ${normalizedCode}로 이동되었습니다.`);
+            
+            // 모달 닫기
+            document.getElementById('moveLocationModal').remove();
+            
+            // 위치 보기 새로고침
+            await resetLocationView();
+            
+            // 이동한 위치로 자동 선택
+            setTimeout(() => {
+              const newLocationElement = document.querySelector(`g[data-location-code="${normalizedCode}"]`);
+              if (newLocationElement) {
+                newLocationElement.click();
+              }
+            }, 500);
+          } catch (error) {
+            console.error('위치 이동 실패:', error);
+            alert('위치 이동 실패: ' + error.message);
+          }
+        });
+        
+        // 호버 효과
+        group.addEventListener('mouseenter', () => {
+          rect.setAttribute('fill-opacity', '0.9');
+          rect.setAttribute('stroke-width', '3');
+        });
+        group.addEventListener('mouseleave', () => {
+          rect.setAttribute('fill-opacity', '0.7');
+          rect.setAttribute('stroke-width', '2');
+        });
+      } else if (isOccupied) {
+        // 사용 중 (빨간색)
+        rect.setAttribute('fill', '#FFB6C1');
+        rect.setAttribute('fill-opacity', '0.7');
+        rect.setAttribute('stroke', '#DC143C');
+        rect.setAttribute('stroke-width', '2');
+        rect.style.cursor = 'not-allowed';
+      } else {
+        // 사용 불가/점검 중 (회색)
+        rect.setAttribute('fill', '#D3D3D3');
+        rect.setAttribute('fill-opacity', '0.5');
+        rect.setAttribute('stroke', '#808080');
+        rect.setAttribute('stroke-width', '1');
+        rect.style.cursor = 'not-allowed';
+      }
+      
+      group.appendChild(rect);
+      
+      // 위치 코드 텍스트
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('x', loc.x + loc.width / 2);
+      text.setAttribute('y', loc.y + loc.height / 2);
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('alignment-baseline', 'middle');
+      text.setAttribute('font-size', '12');
+      text.setAttribute('font-weight', 'bold');
+      text.setAttribute('fill', '#222');
+      text.textContent = normalizedCode;
+      group.appendChild(text);
+      
+      svg.appendChild(group);
+    });
+    
+    contentDiv.innerHTML = '';
+    contentDiv.appendChild(svg);
+    
+  } catch (error) {
+    console.error('빈 위치 맵 로드 실패:', error);
+    contentDiv.innerHTML = `<div class="text-red-600">데이터 로드 실패: ${error.message}</div>`;
+  }
+}
+
 async function printShippingLabel(si) {
   const now = new Date();
   const dateStr = now.toISOString().slice(0,10).replace(/-/g,'.');

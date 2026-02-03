@@ -1663,8 +1663,8 @@ async function editPlan(planId) {
       const receivingPlaceSelect = document.getElementById('receivingPlaceSelect');
       const receivingPlaceInput = document.getElementById('receivingPlaceInput');
       
-      // PTA 또는 PORT인지 확인
-      if (receivingPlace === 'PTA' || receivingPlace === 'PORT') {
+      // PTA, PORT, PTM인지 확인
+      if (receivingPlace === 'PTA' || receivingPlace === 'PORT' || receivingPlace === 'PTM') {
         if (receivingPlaceSelect) {
           receivingPlaceSelect.value = receivingPlace;
           receivingPlaceSelect.classList.remove('hidden');
